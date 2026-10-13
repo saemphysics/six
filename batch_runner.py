@@ -28,7 +28,6 @@ import csv
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -108,8 +107,7 @@ def stitch_av(raw_video: Path, voice: Path, pad: Path, out: Path):
     """Mix voice + pad onto raw video, extend video tail by CLOSING_CARD_SEC,
     and pad audio so the closing card has ambient bed."""
     fps = probe_fps(raw_video)
-    CANONICAL_SR = 44100
-    pad_samples = int(CANONICAL_SR * CLOSING_CARD_SEC)
+    pad_samples = int(44100 * CLOSING_CARD_SEC)
 
     filter_complex = (
         # mix voice + pad at unity gain, no clipping
@@ -346,13 +344,17 @@ def _render_one(row: dict, vid_id: str, final_output: Path,
         if skip_audio:
             voice, pad, duration = _make_silent_audio(row, vid_id)
         else:
-            # Lazy import so --dry-run doesn't pull in torch/XTTS
-            from generate_audio import synthesize_audio_for_row
-            voice, pad, duration = synthesize_audio_for_row(
-                row,
-                speaker_wav=str(VOICE_SAMPLE),
-                output_dir=str(TEMP_AUDIO),
-            )
+            try:
+                # Lazy import so --dry-run doesn't pull in torch/XTTS
+                from generate_audio import synthesize_audio_for_row
+                voice, pad, duration = synthesize_audio_for_row(
+                    row,
+                    speaker_wav=str(VOICE_SAMPLE),
+                    output_dir=str(TEMP_AUDIO),
+                )
+            except Exception as e:
+                print(f"[{_ts()}]   ! TTS failed ({e}) -> FALLBACK to silent audio (video will still render)")
+                voice, pad, duration = _make_silent_audio(row, vid_id)
 
         # ---- 2. Render -----------------------------------------------
         ori = (orientation_override
@@ -417,7 +419,7 @@ def _render_one(row: dict, vid_id: str, final_output: Path,
 
         # ---- 3. Stitch -----------------------------------------------
         if skip_stitch:
-            shutil.move(str(raw_output), str(final_output))
+            raw_output.replace(final_output)
             print(f"[{_ts()}]   → SKIP-STITCH: {final_output}\n")
             return
 
