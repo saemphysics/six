@@ -1,0 +1,50 @@
+# requirements.txt v2.3.1 — Pinned for stable CI cache + CPU runners
+# This file is hashed for GitHub Actions cache key: ${{ hashFiles('requirements.txt') }}
+# Install order in workflow:
+#   1. torch + torchaudio from https://download.pytorch.org/whl/cpu
+#   2. pip install -r requirements.txt
+# Do NOT include torch/torchaudio here — they are installed from CPU index separately.
+
+# --- Core rendering ---
+manim==0.18.1
+numpy==1.26.4
+scipy==1.12.0
+
+# --- Audio mastering (soundscape.py) ---
+# pyloudnorm optional but recommended for true LUFS (-14 YouTube target)
+pyloudnorm==0.1.1
+
+# --- TTS: Coqui TTS XTTS-v2 (generate_audio.py) ---
+# Pinned to last Apache-2.0 release before license change
+TTS==0.22.0
+# TTS deps — pinned to avoid breaking changes
+gruut==2.2.3
+phonemizer==3.2.1
+einops==0.8.0
+transformers==4.38.2
+huggingface-hub==0.22.2
+packaging==24.0
+
+# --- Text normalization (text_normalizer.py) ---
+# stdlib only (re, unicodedata, functools) — no extra deps
+# If you add Hinglish: indic-nlp-library==0.91
+
+# --- Validation & utils ---
+# schema_validator.py is stdlib only (csv, json, os, re, sys)
+# batch_runner.py needs ffmpeg via apt, not pip
+tqdm==4.66.2
+
+# --- Optional: For future LLM content gen (Layer 2) ---
+# openai==1.30.0  # Uncomment when you enable GPT script generation
+# anthropic==0.27.0
+
+# --- Dev / CI ---
+pytest==8.2.0
+black==24.4.2
+ruff==0.4.2
+
+# --- Notes ---
+# - torch==2.2.2 + torchaudio==2.2.2 installed separately from CPU index
+# - texlive + ffmpeg + libcairo + libpango installed via apt in workflow
+# - For local macOS: brew install ffmpeg cairo pango
+# - HF cache: HF_HOME=${{ github.workspace }}/.hf_cache (2GB XTTS model)
