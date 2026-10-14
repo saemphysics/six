@@ -27,6 +27,7 @@ __all__ = [
     "MagneticsEngine",
     "FluidsEngine",
     "WavesEngine",
+    "EngineCatalog",
 ]
 
 
@@ -342,3 +343,58 @@ Magnetics = MagneticsEngine
 Fluids = FluidsEngine
 Waves = WavesEngine
 Kinematics = KinematicsEngine
+
+
+class EngineCatalog:
+    """Registry and resolution utilities for the domain engine library."""
+
+    _registry = {
+        "calculus": CalculusEngine,
+        "geometry": GeometryEngine,
+        "linear_algebra": LinearAlgebraEngine,
+        "kinematics": KinematicsEngine,
+        "mechanics": MechanicsEngine,
+        "electrostatics": ElectrostaticsEngine,
+        "magnetics": MagneticsEngine,
+        "fluids": FluidsEngine,
+        "waves": WavesEngine,
+    }
+
+    @classmethod
+    def available(cls) -> list[str]:
+        return sorted(cls._registry)
+
+    @classmethod
+    def resolve(cls, name: str):
+        key = str(name).strip().lower().replace(" ", "_").replace("-", "_")
+        alias_map = {
+            "linearalgebra": "linear_algebra",
+            "lin_alg": "linear_algebra",
+            "electrodynamics": "electrostatics",
+        }
+        key = alias_map.get(key, key)
+        if key not in cls._registry:
+            raise KeyError(f"unsupported engine: {name!r}")
+        return cls._registry[key]
+
+    @classmethod
+    def instantiate(cls, name: str, **kwargs):
+        engine = cls.resolve(name)
+        if isinstance(engine, type):
+            return engine(**kwargs)
+        return engine
+
+    @classmethod
+    def describe(cls) -> dict[str, str]:
+        descriptions = {
+            "calculus": "Derivatives, integrals, and analytic approximation tools.",
+            "geometry": "Distance, angle, and Euclidean object primitives.",
+            "linear_algebra": "Vector, matrix, and basis operations for visual proofs.",
+            "kinematics": "Position and velocity evolution under simple motion models.",
+            "mechanics": "Projectile, harmonic, and force-driven dynamical systems.",
+            "electrostatics": "Coulomb field generation and charge interactions.",
+            "magnetics": "Magnetic field approximations and current-centric geometry.",
+            "fluids": "Velocity-field and streamline-like flow primitives.",
+            "waves": "Traveling and standing waves for interference visuals.",
+        }
+        return {key: descriptions.get(key, "") for key in cls.available()}

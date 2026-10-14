@@ -36,7 +36,12 @@ import textwrap
 import numpy as np
 from manim import *
 from manim import rate_functions as rf
-from physics_engine import integrate_rk4
+from physics_engine import (
+    ElectrostaticsEngine,
+    MechanicsEngine,
+    WavesEngine,
+    integrate_rk4,
+)
 
 # ============================================================ voiceover
 try:
@@ -1677,7 +1682,14 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
         def _curve():
             t = gt.get_value()
             return axes.plot(
-                lambda x: amp * np.sin(freq * x - speed * t),
+                lambda x: WavesEngine.traveling_wave(
+                    amplitude=amp,
+                    wave_number=freq,
+                    angular_frequency=speed,
+                    phase=0.0,
+                    x=x,
+                    t=t,
+                ),
                 x_range=[x0, x1], color=color, stroke_width=3.5,
             )
         return VGroup(axes, always_redraw(_curve))
@@ -2168,26 +2180,23 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
 
     def _prim_projectile_motion(self, item):
         v0 = float(item.get("v0", 5.0))
-        angle = float(item.get("angle", 45)) * DEGREES
+        angle_deg = float(item.get("angle", 45))
         g = float(item.get("g", 9.8))
         color = resolve_color(item)
         gt = self.global_time
+        angle = np.deg2rad(angle_deg)
         t_max = 2 * v0 * np.sin(angle) / g
-
-        def _traj(t):
-            x = v0 * np.cos(angle) * t
-            y = v0 * np.sin(angle) * t - 0.5 * g * t ** 2
-            return [x, y]
-
-        pts = [_traj(t) for t in np.linspace(0, t_max, 100)]
-        path = VMobject().set_points_as_corners(
-            [np.array([p[0], p[1], 0]) for p in pts]
-        ).set_stroke(color, width=3)
+        flight = MechanicsEngine.projectile_trajectory(v0, angle_deg, dt=0.02, gravity=g, max_time=t_max + 1.0)
+        pts = [np.array([x, y, 0.0]) for x, y in flight]
+        path = VMobject().set_points_as_corners(pts).set_stroke(color, width=3)
 
         def _ball_pos():
-            t = min(gt.get_value() % (t_max + 1), t_max)
-            p = _traj(t)
-            return np.array([p[0], p[1], 0])
+            t = min(gt.get_value() % (t_max + 1.0), t_max)
+            x = v0 * np.cos(angle) * t
+            y = v0 * np.sin(angle) * t - 0.5 * g * t ** 2
+            if y < 0.0:
+                y = 0.0
+            return np.array([x, y, 0.0])
         ball = always_redraw(lambda: Dot(_ball_pos(), radius=0.15,
                                           color=COLOR["accent"]))
         return VGroup(path, ball)

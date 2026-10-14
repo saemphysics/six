@@ -4,6 +4,7 @@ import pytest
 from physics_engine import (
     CalculusEngine,
     ElectrostaticsEngine,
+    EngineCatalog,
     FluidsEngine,
     GeometryEngine,
     KinematicsEngine,
@@ -143,3 +144,15 @@ def test_electrostatics_magnetics_waves_and_fluids_engines_produce_fields():
     flow = FluidsEngine.velocity_field(x=1.0, y=2.0, t=0.5)
     assert flow.shape == (2,)
     assert np.all(np.isfinite(flow))
+
+
+def test_domain_registry_exposes_every_engine_and_resolves_class_names():
+    names = EngineCatalog.available()
+    required = {
+        "calculus", "geometry", "linear_algebra", "kinematics", "mechanics",
+        "electrostatics", "magnetics", "fluids", "waves",
+    }
+    assert required.issubset(set(names))
+    assert EngineCatalog.resolve("mechanics") is MechanicsEngine
+    assert EngineCatalog.resolve("waves") is WavesEngine
+    assert EngineCatalog.resolve("calculus") is CalculusEngine
