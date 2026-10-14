@@ -53,6 +53,14 @@ class NarrativeEngine:
         ),
     }
 
+    _motifs = {
+        "wave": "interference field with moving phase fronts",
+        "motion": "tracked path with a clean coordinate frame",
+        "field": "charged particles with luminous vectors",
+        "vector": "basis transformation with animated decomposition",
+        "default": "minimal diagram with elegant motion and a single explanatory lens",
+    }
+
     @staticmethod
     def build_story(topic: str, domains: Iterable[str] | None = None) -> list[SceneBeat]:
         """Build a coherent beat list for a scientific topic."""
@@ -114,3 +122,46 @@ class NarrativeEngine:
         if "orbit" in topic_key or "motion" in topic_key or "collision" in topic_key:
             return ["mechanics", "kinematics", "calculus"]
         return ["mechanics", "calculus", "waves"]
+
+    @staticmethod
+    def topic_blueprint(topic: str, domains: Iterable[str] | None = None) -> dict:
+        """Return a production-ready storyboard blueprint for a topic."""
+        topic_name = str(topic or "general").strip()
+        domain_list = list(domains) if domains is not None else NarrativeEngine.choose_domains(topic_name)
+        domain_list = [str(name).strip().lower() for name in domain_list if str(name).strip()]
+        if not domain_list:
+            domain_list = NarrativeEngine.choose_domains(topic_name)
+
+        motif_key = "default"
+        if "wave" in topic_name.lower():
+            motif_key = "wave"
+        elif "field" in topic_name.lower() or "electric" in topic_name.lower() or "magnet" in topic_name.lower():
+            motif_key = "field"
+        elif "vector" in topic_name.lower() or "matrix" in topic_name.lower():
+            motif_key = "vector"
+        elif "motion" in topic_name.lower() or "orbit" in topic_name.lower() or "collision" in topic_name.lower():
+            motif_key = "motion"
+
+        beats = NarrativeEngine.build_story(topic_name, domain_list)
+        scene_plan = [
+            {
+                "title": beat.title,
+                "engine": beat.engine,
+                "goal": beat.goal,
+                "detail": beat.detail,
+                "duration": beat.duration,
+            }
+            for beat in beats
+        ]
+        voiceover = [
+            f"{beat.title.capitalize()}: {beat.goal} {beat.detail}."
+            for beat in beats
+        ]
+        return {
+            "topic": topic_name,
+            "domains": domain_list,
+            "motif": NarrativeEngine._motifs[motif_key],
+            "scene_plan": scene_plan,
+            "voiceover": voiceover,
+            "style": "elegant, minimal, mathematically precise, cinematic",
+        }

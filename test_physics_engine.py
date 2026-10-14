@@ -165,3 +165,12 @@ def test_narrative_engine_builds_a_coherent_story_arc():
     assert beats[0].title == "setup"
     assert all(beat.engine in {"mechanics", "calculus", "waves"} for beat in beats)
     assert all(beat.goal for beat in beats)
+
+
+def test_narrative_plan_generates_topic_blueprint_and_voiceover():
+    plan = NarrativeEngine.topic_blueprint("wave interference", ["waves", "mechanics"])
+    assert plan["topic"] == "wave interference"
+    assert plan["domains"] == ["waves", "mechanics"]
+    assert plan["motif"]
+    assert len(plan["voiceover"]) >= 3
+    assert plan["scene_plan"][0]["title"] == "setup"
