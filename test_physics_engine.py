@@ -1,11 +1,15 @@
+import json
+
 import numpy as np
 import pytest
 
 from narrative_engine import NarrativeEngine
 from physics_engine import (
+    AdvancedCalculusEngine,
     CalculusEngine,
     DifferentialEquationsEngine,
     ElectrostaticsEngine,
+    ElectrodynamicsEngine,
     EngineCatalog,
     FluidsEngine,
     GeometryEngine,
@@ -13,6 +17,7 @@ from physics_engine import (
     LinearAlgebraEngine,
     MagneticsEngine,
     MechanicsEngine,
+    RotationalMechanicsEngine,
     UniversalEngine,
     VectorCalculusEngine,
     WavesEngine,
@@ -123,6 +128,8 @@ def test_mechanics_and_kinematics_engines_model_motion():
     assert len(trajectory) > 0
     assert trajectory[0][1] == pytest.approx(0.0)
     assert trajectory[-1][1] <= 0.0
+    assert trajectory[-1][1] == pytest.approx(0.0)
+    assert trajectory[-1][0] == pytest.approx(100.0 / 9.81, rel=1e-3)
 
 
 def test_electrostatics_magnetics_waves_and_fluids_engines_produce_fields():
@@ -148,6 +155,99 @@ def test_electrostatics_magnetics_waves_and_fluids_engines_produce_fields():
     flow = FluidsEngine.velocity_field(x=1.0, y=2.0, t=0.5)
     assert flow.shape == (2,)
     assert np.all(np.isfinite(flow))
+    with pytest.raises(ValueError, match="singular"):
+        ElectrostaticsEngine.electric_field([[0.0, 0.0, 0.0]], [1.0], [0.0, 0.0, 0.0])
+    with pytest.raises(ValueError, match="singular"):
+        MagneticsEngine.magnetic_field([0.0, 0.0, 0.0], 1.0, [0.0, 0.0, 0.0])
+
+
+def test_rotational_mechanics_obeys_torque_and_energy_relations():
+    inertia = RotationalMechanicsEngine.moment_of_inertia([2.0, 1.0], [1.0, 2.0])
+    acceleration = RotationalMechanicsEngine.angular_acceleration(10.0, inertia)
+    assert inertia == pytest.approx(6.0)
+    assert acceleration == pytest.approx(10 / 6)
+    assert RotationalMechanicsEngine.kinetic_energy(inertia, 2.0) == pytest.approx(12.0)
+
+    times, states = RotationalMechanicsEngine.simulate_constant_torque(
+        10.0, inertia, 0.0, 0.0, 1.0, 0.1,
+    )
+    assert times[-1] == pytest.approx(1.0)
+    assert states[-1] == pytest.approx([5 / 6, 10 / 6])
+
+
+def test_electrodynamics_lorentz_force_and_poynting_vector():
+    force = ElectrodynamicsEngine.lorentz_force(
+        2.0,
+        [1.0, 0.0, 0.0],
+        [0.0, 3.0, 0.0],
+        [0.0, 0.0, 2.0],
+    )
+    assert force == pytest.approx([14.0, 0.0, 0.0])
+    assert ElectrodynamicsEngine.poynting_vector(
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        mu0=2.0,
+    ) == pytest.approx([0.0, 0.0, 0.5])
+
+
+def test_fluid_source_and_vortex_are_divergence_free_away_from_singularities():
+    point = np.array([1.2, 0.8])
+    divergence_vortex = VectorCalculusEngine.divergence(
+        lambda p: FluidsEngine.vortex_flow(p[0], p[1], 2.0),
+        point,
+    )
+    divergence_source = VectorCalculusEngine.divergence(
+        lambda p: FluidsEngine.source_flow(p[0], p[1], 2.0),
+        point,
+    )
+    assert divergence_vortex == pytest.approx(0.0, abs=1e-8)
+    assert divergence_source == pytest.approx(0.0, abs=1e-8)
+    assert FluidsEngine.continuity_residual(-2.0, 2.0) == pytest.approx(0.0)
+    point = np.array([0.3, 1.1])
+    flow = lambda p: FluidsEngine.velocity_field(p[0], p[1], 0.4)
+    assert FluidsEngine.continuity_error(flow, point) == pytest.approx(0.0, abs=1e-8)
+
+
+def test_wave_engine_superposition_and_phase_speed():
+    x = np.linspace(-1.0, 1.0, 5)
+    summed = WavesEngine.superpose(
+        [(1.0, 2.0, 4.0, 0.0), (0.5, 2.0, 4.0, np.pi / 2)],
+        x,
+        0.25,
+    )
+    expected = np.sin(2 * x - 1) + 0.5 * np.sin(2 * x - 1 + np.pi / 2)
+    assert summed == pytest.approx(expected)
+    assert WavesEngine.phase_velocity(2.0, 6.0) == pytest.approx(3.0)
+    assert WavesEngine.sample_wave(1.0, 2.0, 3.0, 0.0, [-1.0, 1.0], 11).shape == (11, 2)
+
+
+def test_catalog_and_narrative_route_new_independent_engines():
+    assert EngineCatalog.resolve("advanced calculus") is AdvancedCalculusEngine
+    assert EngineCatalog.resolve("electromagnetism") is ElectrodynamicsEngine
+    assert EngineCatalog.resolve("rotation") is RotationalMechanicsEngine
+    assert {"advanced_calculus", "electrodynamics", "rotational_mechanics"}.issubset(
+        EngineCatalog.available()
+    )
+
+    fluid_plan = NarrativeEngine.topic_blueprint("vortex flow")
+    assert fluid_plan["motif"] == "streamlines expose incompressible flow around its sources and vortices"
+    assert fluid_plan["visuals"][0]["engine"] == "fluids"
+    assert "electrodynamics" in NarrativeEngine.choose_domains("electromagnetism")
+
+
+@pytest.mark.parametrize(
+    ("topic", "visual_type"),
+    [
+        ("advanced calculus derivative", "graph"),
+        ("rotational mechanics", "group"),
+        ("vortex flow", "group"),
+        ("electrodynamics", "group"),
+    ],
+)
+def test_topic_visualizations_use_renderer_supported_primitives(topic, visual_type):
+    visual_data = UniversalEngine().generate(topic)["visual_data"]
+    assert visual_data[0]["type"] == visual_type
+    json.dumps(visual_data)
 
 
 def test_domain_registry_exposes_every_engine_and_resolves_class_names():
@@ -177,6 +277,28 @@ def test_narrative_plan_generates_topic_blueprint_and_voiceover():
     assert plan["motif"]
     assert len(plan["voiceover"]) >= 3
     assert plan["scene_plan"][0]["title"] == "setup"
+
+
+@pytest.mark.parametrize(
+    ("topic", "motif", "element"),
+    [
+        ("standing waves", "phase fronts revealing interference and nodes", "nodes and antinodes"),
+        ("electric field", "field vectors and flux tracing the source geometry", "field direction and magnitude"),
+        ("matrix transformation", "basis vectors revealing a transformation one component at a time", "transformed basis and vectors"),
+        ("orbital motion", "a tracked trajectory anchored to a visible coordinate frame", "time-evolving trajectory"),
+    ],
+)
+def test_narrative_blueprints_select_visuals_by_topic_family(topic, motif, element):
+    plan = NarrativeEngine.topic_blueprint(topic)
+
+    assert plan["motif"] == motif
+    assert any(visual["element"] == element for visual in plan["visuals"])
+
+
+def test_narrative_blueprint_keeps_exact_topic_template_precedence():
+    plan = NarrativeEngine.topic_blueprint("wave interference")
+
+    assert plan["visuals"][0]["element"] == "two source rings"
 
 
 def test_vector_calculus_and_odes_support_deep_math_narratives():
@@ -212,3 +334,32 @@ def test_universal_engine_generates_a_valid_topic_workflow():
     assert result["scene_plan"]
     assert result["simulator"]["type"] == "rk4"
     assert result["intention"] == "mathematically precise and physically insightful"
+
+
+@pytest.mark.parametrize(
+    ("topic", "primitive"),
+    [
+        ("wave interference", "two_source_waves"),
+        ("traveling wave", "wave"),
+        ("pendulum", "pendulum"),
+        ("projectile motion", "projectile_motion"),
+        ("electric field", "group"),
+        ("magnetic field", "group"),
+        ("matrix transformation", "group"),
+    ],
+)
+def test_universal_engine_emits_renderer_ready_visual_data(topic, primitive):
+    result = UniversalEngine().generate(topic)
+
+    assert result["visual_data"][0]["type"] == primitive
+    json.dumps(result["visual_data"])
+
+
+def test_electric_field_animation_vectors_follow_calculated_field():
+    visual = UniversalEngine().generate("electric field")["visual_data"][0]
+    vectors = [item for item in visual["children"] if item["type"] == "vector"]
+    midpoint = next(item for item in vectors if item["start"] == [0.0, 0.0, 0.0])
+
+    assert len(vectors) > 20
+    assert midpoint["end"][0] > midpoint["start"][0]
+    assert midpoint["end"][1] == pytest.approx(midpoint["start"][1])

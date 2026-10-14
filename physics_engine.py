@@ -4,7 +4,8 @@ The engine exposes a compact but production-friendly API for driving cinematic
 simulations: a fixed-step RK4 integrator, harmonic-oscillator dynamics, and a
 nonlinear pendulum model. These are intentionally generic and deterministic so
 that the same state equations can be used both in numerical validation and in
-rendered scenes.
+rendered scenes. Mathematics domains live in ``math_engine`` and are re-exported
+here to preserve the original public imports.
 """
 from __future__ import annotations
 
@@ -12,6 +13,14 @@ from collections.abc import Callable
 
 import numpy as np
 
+from math_engine import (
+    AdvancedCalculusEngine,
+    CalculusEngine,
+    DifferentialEquationsEngine,
+    GeometryEngine,
+    LinearAlgebraEngine,
+    VectorCalculusEngine,
+)
 from narrative_engine import NarrativeEngine
 
 __all__ = [
@@ -19,14 +28,17 @@ __all__ = [
     "harmonic_oscillator_derivative",
     "pendulum_derivative",
     "simulate_system",
+    "AdvancedCalculusEngine",
     "CalculusEngine",
     "GeometryEngine",
     "LinearAlgebraEngine",
     "KinematicsEngine",
     "KineticsEngine",
     "MechanicsEngine",
+    "RotationalMechanicsEngine",
     "ElectrostaticsEngine",
     "MagneticsEngine",
+    "ElectrodynamicsEngine",
     "FluidsEngine",
     "WavesEngine",
     "VectorCalculusEngine",
@@ -154,83 +166,6 @@ def simulate_system(
     return integrate_rk4(derivative, initial_state, duration, dt)
 
 
-class CalculusEngine:
-    """Core symbolic/numeric calculus primitives for animation math."""
-
-    @staticmethod
-    def derivative(func: Callable[[np.ndarray], np.ndarray], x: np.ndarray | float, *, h: float = 1e-6):
-        x_arr = np.asarray(x, dtype=np.float64)
-        if x_arr.ndim == 0:
-            return float((func(x_arr + h) - func(x_arr - h)) / (2.0 * h))
-        values = np.asarray(func(x_arr), dtype=np.float64)
-        if values.shape != x_arr.shape:
-            raise ValueError("function output must match the input shape")
-        return np.gradient(values, x_arr, edge_order=2)
-
-    @staticmethod
-    def integrate(func: Callable[[np.ndarray], np.ndarray], a: float, b: float, n: int = 1000) -> float:
-        if n < 2:
-            raise ValueError("n must be at least 2")
-        xs = np.linspace(float(a), float(b), int(n) + 1)
-        ys = np.asarray(func(xs), dtype=np.float64)
-        return float(np.trapezoid(ys, xs))
-
-
-class GeometryEngine:
-    """Euclidean geometry primitives used in visual proofs and diagrams."""
-
-    @staticmethod
-    def distance(point_a, point_b) -> float:
-        a = np.asarray(point_a, dtype=np.float64)
-        b = np.asarray(point_b, dtype=np.float64)
-        return float(np.linalg.norm(a - b))
-
-    @staticmethod
-    def angle_between(vector_a, vector_b) -> float:
-        a = np.asarray(vector_a, dtype=np.float64)
-        b = np.asarray(vector_b, dtype=np.float64)
-        denominator = np.linalg.norm(a) * np.linalg.norm(b)
-        if denominator == 0.0:
-            raise ValueError("angle between zero vectors is undefined")
-        cosine = np.clip(np.dot(a, b) / denominator, -1.0, 1.0)
-        return float(np.arccos(cosine))
-
-    @staticmethod
-    def line_equation(point_a, point_b):
-        a = np.asarray(point_a, dtype=np.float64)
-        b = np.asarray(point_b, dtype=np.float64)
-        delta = b - a
-        if np.allclose(delta, 0.0):
-            raise ValueError("line endpoints must be distinct")
-        slope = delta[1] / delta[0] if abs(delta[0]) > 1e-12 else np.inf
-        intercept = a[1] - slope * a[0]
-        return slope, intercept
-
-
-class LinearAlgebraEngine:
-    """Lightweight linear algebra utilities for vector and matrix problems."""
-
-    @staticmethod
-    def dot(vector_a, vector_b):
-        a = np.asarray(vector_a, dtype=np.float64)
-        b = np.asarray(vector_b, dtype=np.float64)
-        return float(np.dot(a, b))
-
-    @staticmethod
-    def matrix_vector_product(matrix, vector):
-        m = np.asarray(matrix, dtype=np.float64)
-        v = np.asarray(vector, dtype=np.float64)
-        return np.asarray(m @ v, dtype=np.float64)
-
-    @staticmethod
-    def normalize(vector):
-        v = np.asarray(vector, dtype=np.float64)
-        norm = np.linalg.norm(v)
-        if norm == 0.0:
-            raise ValueError("cannot normalize a zero vector")
-        return v / norm
-
-
 class KinematicsEngine:
     """1D/2D kinematics for cinematic motion studies."""
 
@@ -247,27 +182,116 @@ KineticsEngine = KinematicsEngine
 
 
 class MechanicsEngine:
-    """Classical mechanics models for trajectories and oscillations."""
+    """Classical mechanics models with analytic, physically consistent states."""
 
     @staticmethod
     def projectile_trajectory(speed: float, angle_deg: float, dt: float, gravity: float = 9.81, max_time: float = 10.0):
-        theta = np.deg2rad(float(angle_deg))
-        vx = float(speed) * np.cos(theta)
-        vy = float(speed) * np.sin(theta)
-        x = 0.0
-        y = 0.0
-        positions = [(x, y)]
-        t = 0.0
-        while y >= 0.0 and t <= max_time:
-            x = vx * t
-            y = vy * t - 0.5 * gravity * t ** 2
-            positions.append((x, y))
-            t += float(dt)
-        return positions
+        speed, angle_deg, dt, gravity, max_time = map(
+            float, (speed, angle_deg, dt, gravity, max_time)
+        )
+        if not all(np.isfinite(value) for value in (speed, angle_deg, dt, gravity, max_time)):
+            raise ValueError("projectile parameters must be finite")
+        if speed < 0 or gravity <= 0 or dt <= 0 or max_time <= 0:
+            raise ValueError("speed must be non-negative; gravity, dt, and max_time must be positive")
+        theta = np.deg2rad(angle_deg)
+        vx, vy = speed * np.cos(theta), speed * np.sin(theta)
+        flight_time = max(0.0, 2.0 * vy / gravity)
+        end_time = min(flight_time, max_time)
+        times = np.arange(0.0, end_time, dt)
+        times = np.append(times, end_time)
+        trajectory = [
+            (float(vx * t), float(max(0.0, vy * t - 0.5 * gravity * t**2)))
+            for t in times
+        ]
+        return trajectory
 
     @staticmethod
     def spring_force(k: float, x: float) -> float:
+        k, x = float(k), float(x)
+        if not np.isfinite(k) or k < 0 or not np.isfinite(x):
+            raise ValueError("spring constant must be finite and non-negative and displacement finite")
         return float(-k * x)
+
+    @staticmethod
+    def kinetic_energy(mass: float, velocity) -> float:
+        mass = float(mass)
+        v = np.asarray(velocity, dtype=np.float64)
+        if not np.isfinite(mass) or mass <= 0 or v.size == 0 or not np.all(np.isfinite(v)):
+            raise ValueError("mass must be positive and velocity finite")
+        return float(0.5 * mass * np.dot(v.ravel(), v.ravel()))
+
+    @staticmethod
+    def momentum(mass: float, velocity) -> np.ndarray:
+        mass = float(mass)
+        v = np.asarray(velocity, dtype=np.float64)
+        if not np.isfinite(mass) or mass <= 0 or v.ndim != 1 or not np.all(np.isfinite(v)):
+            raise ValueError("mass must be positive and velocity a finite vector")
+        return mass * v
+
+    @staticmethod
+    def newtonian_acceleration(force, mass: float) -> np.ndarray:
+        force_array = np.asarray(force, dtype=np.float64)
+        mass = float(mass)
+        if force_array.size == 0 or not np.all(np.isfinite(force_array)):
+            raise ValueError("force must contain finite values")
+        if not np.isfinite(mass) or mass <= 0:
+            raise ValueError("mass must be finite and positive")
+        return force_array / mass
+
+
+class RotationalMechanicsEngine:
+    """Rigid-body rotational dynamics about a fixed axis."""
+
+    @staticmethod
+    def moment_of_inertia(masses, radii) -> float:
+        mass_values = np.asarray(masses, dtype=np.float64)
+        radius_values = np.asarray(radii, dtype=np.float64)
+        if mass_values.ndim != 1 or radius_values.shape != mass_values.shape:
+            raise ValueError("masses and radii must be matching one-dimensional arrays")
+        if (
+            mass_values.size == 0
+            or not np.all(np.isfinite(mass_values))
+            or not np.all(np.isfinite(radius_values))
+            or np.any(mass_values < 0)
+        ):
+            raise ValueError("masses and radii must be finite; masses cannot be negative")
+        return float(np.dot(mass_values, radius_values**2))
+
+    @staticmethod
+    def angular_acceleration(torque: float, moment_of_inertia: float) -> float:
+        torque, moment_of_inertia = float(torque), float(moment_of_inertia)
+        if not np.isfinite(torque) or not np.isfinite(moment_of_inertia) or moment_of_inertia <= 0:
+            raise ValueError("torque must be finite and moment of inertia positive")
+        return torque / moment_of_inertia
+
+    @staticmethod
+    def kinetic_energy(moment_of_inertia: float, angular_velocity: float) -> float:
+        inertia, omega = float(moment_of_inertia), float(angular_velocity)
+        if not np.isfinite(inertia) or inertia < 0 or not np.isfinite(omega):
+            raise ValueError("moment of inertia and angular velocity must be finite")
+        return 0.5 * inertia * omega**2
+
+    @staticmethod
+    def simulate_constant_torque(
+        torque: float,
+        moment_of_inertia: float,
+        initial_angle: float,
+        initial_angular_velocity: float,
+        duration: float,
+        dt: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        torque, inertia, angle, omega, duration, dt = map(
+            float, (torque, moment_of_inertia, initial_angle, initial_angular_velocity, duration, dt)
+        )
+        if not all(np.isfinite(value) for value in (torque, inertia, angle, omega, duration, dt)):
+            raise ValueError("rotational simulation parameters must be finite")
+        if inertia <= 0 or duration < 0 or dt <= 0:
+            raise ValueError("moment of inertia and dt must be positive; duration cannot be negative")
+        times = np.arange(0.0, duration, dt)
+        times = np.append(times, duration)
+        alpha = torque / inertia
+        states = np.column_stack((angle + omega * times + 0.5 * alpha * times**2, omega + alpha * times))
+        return times, states
 
 
 class ElectrostaticsEngine:
@@ -278,17 +302,22 @@ class ElectrostaticsEngine:
         p = np.asarray(point, dtype=np.float64)
         pos = np.asarray(positions, dtype=np.float64)
         q = np.asarray(charges, dtype=np.float64)
-        if pos.shape[-1] != 3 or p.shape != (3,):
+        k = float(k)
+        if pos.ndim != 2 or pos.shape[1:] != (3,) or p.shape != (3,):
             raise ValueError("positions and point must be 3D vectors")
-        if pos.shape[0] != q.shape[0]:
+        if q.ndim != 1 or pos.shape[0] != q.shape[0]:
             raise ValueError("charges and positions must have matching lengths")
+        if not np.all(np.isfinite(pos)) or not np.all(np.isfinite(q)) or not np.all(np.isfinite(p)):
+            raise ValueError("positions, charges, and point must be finite")
+        if not np.isfinite(k) or k <= 0:
+            raise ValueError("Coulomb constant must be finite and positive")
 
         field = np.zeros(3, dtype=np.float64)
         for charge_position, charge in zip(pos, q):
             delta = p - charge_position
             radius_sq = np.dot(delta, delta)
             if radius_sq < 1e-12:
-                continue
+                raise ValueError("electric field is singular at a point charge")
             field += k * charge * delta / (radius_sq ** 1.5)
         return field
 
@@ -300,33 +329,115 @@ class MagneticsEngine:
     def magnetic_field(wire_point, current: float, observation, mu0: float = 4e-7 * np.pi):
         p = np.asarray(wire_point, dtype=np.float64)
         o = np.asarray(observation, dtype=np.float64)
+        current, mu0 = float(current), float(mu0)
         if p.shape != (3,) or o.shape != (3,):
             raise ValueError("wire_point and observation must be 3D vectors")
+        if not np.all(np.isfinite(p)) or not np.all(np.isfinite(o)):
+            raise ValueError("wire_point and observation must be finite")
+        if not np.isfinite(current) or not np.isfinite(mu0) or mu0 <= 0:
+            raise ValueError("current must be finite and permeability positive")
         delta = o - p
         radius_sq = np.dot(delta, delta)
         if radius_sq < 1e-12:
-            radius_sq = 1e-12
+            raise ValueError("magnetic field is singular on the ideal wire")
         direction = np.array([0.0, 0.0, 1.0])
         field = mu0 * float(current) * np.cross(direction, delta) / (2.0 * np.pi * radius_sq)
         return field
 
 
+class ElectrodynamicsEngine:
+    """Electric, magnetic, and Lorentz-force calculations for EM scenes."""
+
+    @staticmethod
+    def lorentz_force(charge: float, electric_field, velocity, magnetic_field) -> np.ndarray:
+        charge = float(charge)
+        electric = np.asarray(electric_field, dtype=np.float64)
+        velocity = np.asarray(velocity, dtype=np.float64)
+        magnetic = np.asarray(magnetic_field, dtype=np.float64)
+        if any(vector.shape != (3,) for vector in (electric, velocity, magnetic)):
+            raise ValueError("electric field, velocity, and magnetic field must be 3D vectors")
+        if not np.isfinite(charge) or any(
+            not np.all(np.isfinite(vector)) for vector in (electric, velocity, magnetic)
+        ):
+            raise ValueError("charge and field vectors must be finite")
+        return charge * (electric + np.cross(velocity, magnetic))
+
+    @staticmethod
+    def poynting_vector(electric_field, magnetic_field, *, mu0: float = 4e-7 * np.pi) -> np.ndarray:
+        electric = np.asarray(electric_field, dtype=np.float64)
+        magnetic = np.asarray(magnetic_field, dtype=np.float64)
+        mu0 = float(mu0)
+        if electric.shape != (3,) or magnetic.shape != (3,):
+            raise ValueError("electric and magnetic fields must be 3D vectors")
+        if not np.all(np.isfinite(electric)) or not np.all(np.isfinite(magnetic)):
+            raise ValueError("field vectors must be finite")
+        if not np.isfinite(mu0) or mu0 <= 0:
+            raise ValueError("mu0 must be finite and positive")
+        return np.cross(electric, magnetic) / mu0
+
+
 class FluidsEngine:
-    """Fluid-flow field primitives for streamlines and visualized velocity fields."""
+    """Analytic 2D incompressible flow fields suitable for vector-field scenes."""
+
+    @staticmethod
+    def _validate_point(x, y, core_radius=1e-6) -> tuple[float, float, float]:
+        x, y, core_radius = float(x), float(y), float(core_radius)
+        if not all(np.isfinite(value) for value in (x, y, core_radius)) or core_radius <= 0:
+            raise ValueError("coordinates must be finite and core_radius positive")
+        return x, y, core_radius
+
+    @staticmethod
+    def uniform_flow(x, y, speed: float = 1.0, angle: float = 0.0) -> np.ndarray:
+        x, y = float(x), float(y)
+        speed, angle = float(speed), float(angle)
+        if not all(np.isfinite(value) for value in (x, y, speed, angle)):
+            raise ValueError("flow parameters must be finite")
+        return speed * np.array([np.cos(angle), np.sin(angle)], dtype=np.float64)
+
+    @classmethod
+    def source_flow(cls, x, y, strength: float = 1.0, *, core_radius: float = 1e-6) -> np.ndarray:
+        x, y, core = cls._validate_point(x, y, core_radius)
+        strength = float(strength)
+        if not np.isfinite(strength):
+            raise ValueError("source strength must be finite")
+        radius_sq = x * x + y * y + core * core
+        return strength / (2.0 * np.pi * radius_sq) * np.array([x, y])
+
+    @classmethod
+    def vortex_flow(cls, x, y, circulation: float = 1.0, *, core_radius: float = 1e-6) -> np.ndarray:
+        x, y, core = cls._validate_point(x, y, core_radius)
+        circulation = float(circulation)
+        if not np.isfinite(circulation):
+            raise ValueError("circulation must be finite")
+        radius_sq = x * x + y * y + core * core
+        return circulation / (2.0 * np.pi * radius_sq) * np.array([-y, x])
 
     @staticmethod
     def velocity_field(x, y, t=0.0):
-        x_val = float(x)
-        y_val = float(y)
+        x_val, y_val, t_val = float(x), float(y), float(t)
+        if not all(np.isfinite(value) for value in (x_val, y_val, t_val)):
+            raise ValueError("flow coordinates and time must be finite")
+        phase_x = x_val + t_val
+        phase_y = y_val - t_val
         return np.array([
-            np.sin(x_val + t),
-            np.cos(y_val - t),
+            np.sin(phase_x) * np.cos(phase_y),
+            -np.cos(phase_x) * np.sin(phase_y),
         ], dtype=np.float64)
 
     @staticmethod
-    def continuity_error(field):
-        field_array = np.asarray(field, dtype=np.float64)
-        return float(np.linalg.norm(field_array))
+    def continuity_error(vector_field, point, density_rate: float = 0.0, *, h: float = 1e-6) -> float:
+        residual = FluidsEngine.continuity_residual(
+            VectorCalculusEngine.divergence(vector_field, point, h=h),
+            density_rate,
+        )
+        return abs(residual)
+
+    @staticmethod
+    def continuity_residual(divergence: float, density_rate: float = 0.0) -> float:
+        divergence, density_rate = float(divergence), float(density_rate)
+        if not np.isfinite(divergence) or not np.isfinite(density_rate):
+            raise ValueError("continuity terms must be finite")
+        return divergence + density_rate
 
 
 class WavesEngine:
@@ -340,53 +451,48 @@ class WavesEngine:
     def standing_wave(amplitude: float, wave_number: float, angular_frequency: float, phase: float, x: float, t: float) -> float:
         return float(2.0 * amplitude * np.sin(wave_number * x + phase) * np.cos(angular_frequency * t))
 
-
-class VectorCalculusEngine:
-    """Advanced vector calculus for beautiful visual intuition in multivariable settings."""
+    @staticmethod
+    def phase_velocity(wave_number: float, angular_frequency: float) -> float:
+        wave_number, angular_frequency = float(wave_number), float(angular_frequency)
+        if not np.isfinite(wave_number) or wave_number == 0 or not np.isfinite(angular_frequency):
+            raise ValueError("wave number must be finite and nonzero; angular frequency finite")
+        return angular_frequency / wave_number
 
     @staticmethod
-    def gradient(scalar_field, point):
-        p = np.asarray(point, dtype=np.float64)
-        if p.size == 2:
-            x, y = p
-            fx = scalar_field(np.array([x, y]))
-            h = 1e-6
-            gx = (scalar_field(np.array([x + h, y])) - fx) / h
-            gy = (scalar_field(np.array([x, y + h])) - fx) / h
-            return np.array([gx, gy], dtype=np.float64)
-        if p.size == 3:
-            x, y, z = p
-            h = 1e-6
-            f0 = scalar_field(np.array([x, y, z]))
-            dx = (scalar_field(np.array([x + h, y, z])) - f0) / h
-            dy = (scalar_field(np.array([x, y + h, z])) - f0) / h
-            dz = (scalar_field(np.array([x, y, z + h])) - f0) / h
-            return np.array([dx, dy, dz], dtype=np.float64)
-        raise ValueError("point must be 2D or 3D")
+    def superpose(waves, x, t: float = 0.0) -> np.ndarray:
+        x_values = np.asarray(x, dtype=np.float64)
+        t = float(t)
+        if x_values.ndim != 1 or not np.all(np.isfinite(x_values)) or not np.isfinite(t):
+            raise ValueError("x must be a finite vector and t finite")
+        total = np.zeros_like(x_values)
+        for wave in waves:
+            if len(wave) != 4:
+                raise ValueError("each wave must be (amplitude, wave_number, angular_frequency, phase)")
+            amplitude, wave_number, angular_frequency, phase = map(float, wave)
+            if not all(np.isfinite(v) for v in (amplitude, wave_number, angular_frequency, phase)):
+                raise ValueError("wave parameters must be finite")
+            total += amplitude * np.sin(wave_number * x_values - angular_frequency * t + phase)
+        return total
 
     @staticmethod
-    def divergence(vector_field, point):
-        p = np.asarray(point, dtype=np.float64)
-        h = 1e-6
-        if p.size == 2:
-            vx = vector_field(p)[0]
-            vy = vector_field(p)[1]
-            d1 = (vector_field(p + np.array([h, 0.0]))[0] - vx) / h
-            d2 = (vector_field(p + np.array([0.0, h]))[1] - vy) / h
-            return float(d1 + d2)
-        raise ValueError("divergence implemented for 2D fields only")
-
-
-class DifferentialEquationsEngine:
-    """Core differential equation models for intuitive dynamic explanation."""
-
-    @staticmethod
-    def exponential_decay(k: float = 1.0, t: float = 0.0, initial_value: float = 1.0) -> float:
-        return float(initial_value * np.exp(-float(k) * float(t)))
-
-    @staticmethod
-    def harmonic_response(omega: float = 1.0, t: float = 0.0, amplitude: float = 1.0) -> float:
-        return float(amplitude * np.sin(float(omega) * float(t)))
+    def sample_wave(
+        amplitude: float,
+        wave_number: float,
+        angular_frequency: float,
+        phase: float,
+        x_range,
+        samples: int = 200,
+        t: float = 0.0,
+    ) -> np.ndarray:
+        bounds = np.asarray(x_range, dtype=np.float64)
+        samples, t = int(samples), float(t)
+        if bounds.shape != (2,) or not np.all(np.isfinite(bounds)) or bounds[1] <= bounds[0]:
+            raise ValueError("x_range must contain finite increasing bounds")
+        if samples < 2 or not np.isfinite(t):
+            raise ValueError("samples must be at least 2 and t finite")
+        x = np.linspace(bounds[0], bounds[1], samples)
+        y = WavesEngine.superpose([(amplitude, wave_number, angular_frequency, phase)], x, t)
+        return np.column_stack((x, y))
 
 
 # Backwards-compatible alias for the original motion-engine naming.
@@ -402,13 +508,16 @@ class EngineCatalog:
     """Registry and resolution utilities for the domain engine library."""
 
     _registry = {
+        "advanced_calculus": AdvancedCalculusEngine,
         "calculus": CalculusEngine,
         "geometry": GeometryEngine,
         "linear_algebra": LinearAlgebraEngine,
         "kinematics": KinematicsEngine,
         "mechanics": MechanicsEngine,
+        "rotational_mechanics": RotationalMechanicsEngine,
         "electrostatics": ElectrostaticsEngine,
         "magnetics": MagneticsEngine,
+        "electrodynamics": ElectrodynamicsEngine,
         "fluids": FluidsEngine,
         "waves": WavesEngine,
         "vector_calculus": VectorCalculusEngine,
@@ -425,7 +534,27 @@ class EngineCatalog:
         alias_map = {
             "linearalgebra": "linear_algebra",
             "lin_alg": "linear_algebra",
-            "electrodynamics": "electrostatics",
+            "advancedcalculus": "advanced_calculus",
+            "multivariable_calculus": "advanced_calculus",
+            "rotational": "rotational_mechanics",
+            "rotation": "rotational_mechanics",
+            "rotational_mechanics": "rotational_mechanics",
+            "vectorcalculus": "vector_calculus",
+            "vectorcalc": "vector_calculus",
+            "vector_calculus": "vector_calculus",
+            "diff_eq": "differential_equations",
+            "diff_eqs": "differential_equations",
+            "ode": "differential_equations",
+            "odes": "differential_equations",
+            "differential_equation": "differential_equations",
+            "differential_equations": "differential_equations",
+            "differentialequations": "differential_equations",
+            "electromagnetism": "electrodynamics",
+            "electromagnetics": "electrodynamics",
+            "magnetostatics": "magnetics",
+            "kinetics": "kinematics",
+            "kinematic": "kinematics",
+            "dynamics": "mechanics",
         }
         key = alias_map.get(key, key)
         if key not in cls._registry:
@@ -442,13 +571,16 @@ class EngineCatalog:
     @classmethod
     def describe(cls) -> dict[str, str]:
         descriptions = {
+            "advanced_calculus": "Partial derivatives, Jacobians, Hessians, and sampled curves.",
             "calculus": "Derivatives, integrals, and analytic approximation tools.",
             "geometry": "Distance, angle, and Euclidean object primitives.",
             "linear_algebra": "Vector, matrix, and basis operations for visual proofs.",
             "kinematics": "Position and velocity evolution under simple motion models.",
             "mechanics": "Projectile, harmonic, and force-driven dynamical systems.",
+            "rotational_mechanics": "Moment of inertia, torque, angular acceleration, and rotational energy.",
             "electrostatics": "Coulomb field generation and charge interactions.",
             "magnetics": "Magnetic field approximations and current-centric geometry.",
+            "electrodynamics": "Electric and magnetic fields, Lorentz force, and energy flux.",
             "fluids": "Velocity-field and streamline-like flow primitives.",
             "waves": "Traveling and standing waves for interference visuals.",
             "vector_calculus": "Gradient, divergence, and flow intuition in multiple dimensions.",
@@ -471,6 +603,200 @@ class UniversalEngine:
     def resolve_domain(domain: str):
         return EngineCatalog.resolve(domain)
 
+    @staticmethod
+    def _field_vectors(
+        field_at: Callable[[np.ndarray], np.ndarray],
+        color: str,
+        *,
+        excluded_points: list[np.ndarray] | np.ndarray | None = None,
+    ) -> list[dict]:
+        samples = []
+        excluded = [
+            np.asarray(point, dtype=np.float64)
+            for point in (() if excluded_points is None else excluded_points)
+        ]
+        for y in np.linspace(-2.4, 2.4, 7):
+            for x in np.linspace(-3.6, 3.6, 9):
+                point = np.array([x, y, 0.0])
+                if any(np.linalg.norm(point - source) < 1e-12 for source in excluded):
+                    continue
+                field = np.asarray(field_at(point), dtype=np.float64)
+                magnitude = float(np.linalg.norm(field))
+                if magnitude > 1e-12:
+                    samples.append((point, field, magnitude))
+
+        max_magnitude = max((sample[2] for sample in samples), default=1.0)
+        vectors = []
+        for point, field, magnitude in samples:
+            length = 0.18 + 0.42 * np.sqrt(magnitude / max_magnitude)
+            end = point + field / magnitude * length
+            vectors.append({
+                "type": "vector",
+                "start": point.tolist(),
+                "end": end.tolist(),
+                "color": color,
+            })
+        return vectors
+
+    @staticmethod
+    def _build_visual_data(topic: str) -> list[dict]:
+        topic_key = str(topic).lower()
+        if any(term in topic_key for term in ("derivative", "integral", "calculus", "taylor")):
+            expression = "x**2" if "derivative" in topic_key or "calculus" in topic_key else "sin(x)"
+            return [{
+                "type": "graph",
+                "expression": expression,
+                "x_range": [-3.0, 3.0],
+                "y_range": [-2.0, 6.0],
+                "color": "#F1C40F",
+            }]
+        if any(term in topic_key for term in ("rotation", "rotational", "torque", "angular momentum")):
+            return [{
+                "type": "group",
+                "children": [
+                    {"type": "shape", "kind": "circle", "radius": 1.2, "color": "#3498DB"},
+                    {"type": "vector", "start": [0, 0, 0], "end": [0, 1.8, 0], "label": "ω", "color": "#F1C40F"},
+                    {"type": "arc", "center": [0, 0, 0], "radius": 1.5, "start_angle": 10, "angle": 110, "label": "τ", "color": "#FF4B4B"},
+                ],
+            }]
+        if any(term in topic_key for term in ("fluid", "vortex", "streamline", "flow")):
+            if "vortex" in topic_key:
+                field_at = lambda point: FluidsEngine.vortex_flow(point[0], point[1], 4.0)
+            elif "source" in topic_key or "sink" in topic_key:
+                strength = -4.0 if "sink" in topic_key else 4.0
+                field_at = lambda point: FluidsEngine.source_flow(point[0], point[1], strength)
+            else:
+                field_at = lambda point: FluidsEngine.uniform_flow(point[0], point[1], 1.0)
+            arrows = UniversalEngine._field_vectors(
+                lambda point: np.r_[field_at(point), 0.0],
+                "#2ECC71",
+            )
+            return [{"type": "group", "children": arrows}]
+        if "geometry" in topic_key or "triangle" in topic_key or "circle" in topic_key:
+            return [{
+                "type": "group",
+                "children": [
+                    {
+                        "type": "shape",
+                        "kind": "polygon",
+                        "points": [[-1.6, -1.0, 0.0], [1.6, -1.0, 0.0], [0.2, 1.5, 0.0]],
+                        "color": "#3498DB",
+                    },
+                    {"type": "line", "start": [-1.6, -1.0, 0.0], "end": [0.2, 1.5, 0.0], "label": "c", "color": "#F1C40F"},
+                    {"type": "arc", "center": [-1.6, -1.0, 0.0], "radius": 0.6, "angle": 60, "label": "θ", "color": "#FF4B4B"},
+                ],
+            }]
+        if "wave" in topic_key and "interference" in topic_key:
+            return [{
+                "type": "two_source_waves",
+                "source_a": [-1.5, 0.8, 0.0],
+                "source_b": [-1.5, -0.8, 0.0],
+                "num_rings": 6,
+                "wavelength": 0.7,
+                "speed": 1.2,
+                "max_radius": 5.0,
+                "color_a": "#FF4B4B",
+                "color_b": "#00D2FF",
+            }]
+        if "wave" in topic_key:
+            return [{
+                "type": "wave",
+                "amplitude": 0.9,
+                "frequency": 1.5,
+                "speed": 1.2,
+                "x_range": [-6.0, 6.0],
+                "color": "#00D2FF",
+            }]
+        if "pend" in topic_key:
+            return [{
+                "type": "pendulum",
+                "angle": 50.0,
+                "length": 2.8,
+                "gravity": 9.81,
+                "color": "#F1C40F",
+            }]
+        if "projectile" in topic_key or "orbit" in topic_key or "motion" in topic_key:
+            return [{
+                "type": "projectile_motion",
+                "v0": 6.0,
+                "angle": 55.0,
+                "g": 9.81,
+                "color": "#3498DB",
+            }]
+        if "electrodynamic" in topic_key or "electromagnet" in topic_key:
+            positions = np.array([[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+            charges = np.array([1.0, -1.0])
+            electric_arrows = UniversalEngine._field_vectors(
+                lambda point: ElectrostaticsEngine.electric_field(
+                    positions, charges, point, k=1.0,
+                ),
+                "#3498DB",
+                excluded_points=positions,
+            )
+            magnetic_arrows = UniversalEngine._field_vectors(
+                lambda point: MagneticsEngine.magnetic_field([0, 0, 0], 1.0, point),
+                "#2ECC71",
+                excluded_points=[[0.0, 0.0, 0.0]],
+            )
+            return [{
+                "type": "group",
+                "children": [
+                    *electric_arrows,
+                    *magnetic_arrows,
+                    {"type": "charge", "pos": [-1, 0, 0], "label": "+q", "color": "#FF4B4B"},
+                    {"type": "charge", "pos": [1, 0, 0], "label": "-q", "color": "#00D2FF"},
+                ],
+            }]
+        if "electric" in topic_key or "electrostatic" in topic_key:
+            positions = np.array([[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+            charges = np.array([1.0, -1.0])
+            arrows = UniversalEngine._field_vectors(
+                lambda point: ElectrostaticsEngine.electric_field(
+                    positions, charges, point, k=1.0,
+                ),
+                "#3498DB",
+            )
+            return [{
+                "type": "group",
+                "children": [
+                    *arrows,
+                    {"type": "charge", "pos": [-1.0, 0.0, 0.0], "label": "+q", "color": "#FF4B4B"},
+                    {"type": "charge", "pos": [1.0, 0.0, 0.0], "label": "-q", "color": "#00D2FF"},
+                ],
+            }]
+        if "magnet" in topic_key:
+            arrows = UniversalEngine._field_vectors(
+                lambda point: MagneticsEngine.magnetic_field(
+                    [0.0, 0.0, 0.0], 1.0, point,
+                ),
+                "#2ECC71",
+                excluded_points=[[0.0, 0.0, 0.0]],
+            )
+            return [{
+                "type": "group",
+                "children": [
+                    *arrows,
+                    {"type": "charge", "pos": [0.0, 0.0, 0.0], "label": "I", "color": "#F1C40F"},
+                ],
+            }]
+        if "matrix" in topic_key or "vector" in topic_key:
+            return [{
+                "type": "group",
+                "children": [
+                    {"type": "vector", "start": [0, 0, 0], "end": [2, 0, 0], "label": "e_1", "color": "#8A8F9C"},
+                    {"type": "vector", "start": [0, 0, 0], "end": [0, 2, 0], "label": "e_2", "color": "#8A8F9C"},
+                    {"type": "vector", "start": [0, 0, 0], "end": [2, 0, 0], "label": "Ae_1", "color": "#3498DB"},
+                    {"type": "vector", "start": [0, 0, 0], "end": [2, 2, 0], "label": "Ae_2", "color": "#F1C40F"},
+                ],
+            }]
+        return [{
+            "type": "damped_oscillator",
+            "amplitude": 0.8,
+            "omega": 3.0,
+            "gamma": 0.4,
+            "color": "#3498DB",
+        }]
+
     def simulate(self, topic: str, domains: list[str] | None = None, duration: float = 1.0, dt: float | None = None):
         topic_key = str(topic).lower()
         chosen = list(domains) if domains is not None else NarrativeEngine.choose_domains(topic_key)
@@ -481,29 +807,106 @@ class UniversalEngine:
         dt_value = self.default_dt if dt is None else float(dt)
         duration_value = float(duration)
 
-        if "wave" in topic_key:
-            domain = "waves"
-            state = [0.0]
-            derivative = lambda _time, s: np.array([np.cos(_time)])
-            times, states = integrate_rk4(derivative, state, duration_value, dt_value)
+        if any(term in topic_key for term in ("rotation", "rotational", "torque", "angular momentum")):
+            times, states = RotationalMechanicsEngine.simulate_constant_torque(
+                torque=1.0,
+                moment_of_inertia=1.0,
+                initial_angle=0.0,
+                initial_angular_velocity=0.0,
+                duration=duration_value,
+                dt=dt_value,
+            )
             return {
                 "type": "rk4",
-                "domain": domain,
+                "domain": "rotational_mechanics",
                 "times": times,
                 "states": states,
-                "summary": "Wave phase evolution modeled as a deterministic oscillatory system.",
+                "state_labels": ["angle", "angular_velocity"],
+                "summary": "Angular position and velocity follow the rotational form of Newton's second law.",
+            }
+
+        if "wave" in topic_key:
+            omega = 2.0 * np.pi
+            derivative = harmonic_oscillator_derivative(omega=omega)
+            times, states = simulate_system(derivative, [0.0, 0.9 * omega], duration_value, dt_value)
+            return {
+                "type": "rk4",
+                "domain": "waves",
+                "times": times,
+                "states": states,
+                "state_labels": ["displacement", "transverse_velocity"],
+                "summary": "A sinusoidal wave point follows the harmonic-oscillator equation in time.",
+            }
+
+        if "electrodynamic" in topic_key or "electromagnet" in topic_key:
+            observation = np.array([0.0, 1.0, 0.0])
+            electric = ElectrostaticsEngine.electric_field(
+                [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                [1.0, -1.0],
+                observation,
+                k=1.0,
+            )
+            magnetic = MagneticsEngine.magnetic_field([0.0, 0.0, 0.0], 1.0, observation)
+            velocity = np.array([1.0, 0.0, 0.0])
+            force = ElectrodynamicsEngine.lorentz_force(1.0, electric, velocity, magnetic)
+            return {
+                "type": "fields",
+                "domain": "electrodynamics",
+                "observation": observation,
+                "electric_field": electric,
+                "magnetic_field": magnetic,
+                "test_charge_velocity": velocity,
+                "lorentz_force": force,
+                "poynting_vector": ElectrodynamicsEngine.poynting_vector(electric, magnetic),
+                "summary": "Electric and magnetic fields jointly determine Lorentz force and electromagnetic energy flux.",
+            }
+
+        if "pendulum" in topic_key or "pend" in topic_key:
+            times, states = simulate_system(
+                pendulum_derivative(length=2.8, gravity=9.81),
+                [np.deg2rad(50.0), 0.0],
+                duration_value,
+                dt_value,
+            )
+            return {
+                "type": "rk4",
+                "domain": "mechanics",
+                "times": times,
+                "states": states,
+                "state_labels": ["angle", "angular_velocity"],
+                "summary": "The nonlinear pendulum model retains the exact sine restoring force at large angles.",
+            }
+
+        if any(term in topic_key for term in ("projectile", "trajectory")):
+            trajectory = MechanicsEngine.projectile_trajectory(
+                speed=6.0,
+                angle_deg=55.0,
+                dt=dt_value,
+                gravity=9.81,
+                max_time=duration_value,
+            )
+            return {
+                "type": "trajectory",
+                "domain": "mechanics",
+                "positions": np.asarray(trajectory),
+                "summary": "Projectile motion follows constant horizontal velocity and downward gravitational acceleration.",
             }
 
         if "field" in topic_key or "electric" in topic_key or "magnet" in topic_key:
-            domain = "electrostatics"
-            points = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64)
+            points = np.array([[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64)
             charges = np.array([1.0, -1.0], dtype=np.float64)
-            field = ElectrostaticsEngine.electric_field(points, charges, np.array([0.5, 0.0, 0.0]))
+            observation = np.array([0.0, 1.0, 0.0])
+            if "magnet" in topic_key:
+                field = MagneticsEngine.magnetic_field([0.0, 0.0, 0.0], 1.0, observation)
+                domain = "magnetics"
+            else:
+                field = ElectrostaticsEngine.electric_field(points, charges, observation)
+                domain = "electrodynamics" if "electrodynamic" in topic_key or "electromagnet" in topic_key else "electrostatics"
             return {
                 "type": "rk4",
                 "domain": domain,
                 "field": field,
-                "summary": "Electrostatic field structure generated from source charges.",
+                "summary": "Field values are evaluated from the selected source model at the observation point.",
             }
 
         domain = chosen[0] if chosen else "mechanics"
@@ -534,6 +937,7 @@ class UniversalEngine:
             "motif": blueprint["motif"],
             "style": blueprint["style"],
             "simulator": simulation,
+            "visual_data": self._build_visual_data(topic_name),
             "intention": "mathematically precise and physically insightful",
         }
 
@@ -546,5 +950,6 @@ class UniversalEngine:
 
         episode = NarrativeEngine.build_episode(topic_name, chosen)
         episode["simulator"] = self.simulate(topic_name, chosen, duration=1.0, dt=self.default_dt)
+        episode["visual_data"] = self._build_visual_data(topic_name)
         episode["intention"] = "mathematically precise and physically insightful"
         return episode

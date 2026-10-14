@@ -59,6 +59,121 @@ TEMPLATE_LIBRARY = {
     },
 }
 
+FAMILY_TEMPLATES = {
+    "wave": {
+        "motif": "phase fronts revealing interference and nodes",
+        "camera_notes": [
+            "Establish the sources and their phase before showing the sum.",
+            "Track one crest as it crosses the field, then reveal the nodes.",
+            "Pull back to connect the local pattern to wavelength and frequency.",
+        ],
+        "visuals": [
+            {"title": "setup", "engine": "waves", "element": "sources and phase fronts"},
+            {"title": "intuition", "engine": "calculus", "element": "phase difference"},
+            {"title": "simulation", "engine": "waves", "element": "superposed wave field"},
+            {"title": "reveal", "engine": "waves", "element": "nodes and antinodes"},
+        ],
+    },
+    "field": {
+        "motif": "field vectors and flux tracing the source geometry",
+        "camera_notes": [
+            "Show the sources first, with signs or current direction explicit.",
+            "Trace a few field vectors to make direction and symmetry visible.",
+            "Pull back to reveal how the global field follows from local contributions.",
+        ],
+        "visuals": [
+            {"title": "setup", "engine": "electrostatics", "element": "sources and reference point"},
+            {"title": "intuition", "engine": "vector_calculus", "element": "field direction and magnitude"},
+            {"title": "simulation", "engine": "electrostatics", "element": "superposed field vectors"},
+            {"title": "reveal", "engine": "vector_calculus", "element": "flux and symmetry"},
+        ],
+    },
+    "vector": {
+        "motif": "basis vectors revealing a transformation one component at a time",
+        "camera_notes": [
+            "Fix the coordinate grid before introducing the transformation.",
+            "Move the basis vectors first, then show how their combination moves.",
+            "Reveal the invariant geometry after the coordinate change.",
+        ],
+        "visuals": [
+            {"title": "setup", "engine": "linear_algebra", "element": "basis and coordinate grid"},
+            {"title": "intuition", "engine": "geometry", "element": "vector decomposition"},
+            {"title": "simulation", "engine": "linear_algebra", "element": "transformed basis and vectors"},
+            {"title": "reveal", "engine": "linear_algebra", "element": "preserved structure"},
+        ],
+    },
+    "motion": {
+        "motif": "a tracked trajectory anchored to a visible coordinate frame",
+        "camera_notes": [
+            "Establish the origin, axes, and initial conditions before motion begins.",
+            "Track position and velocity together so the change law stays visible.",
+            "Pull back to compare the trajectory with its conserved quantities.",
+        ],
+        "visuals": [
+            {"title": "setup", "engine": "kinematics", "element": "coordinate frame and initial state"},
+            {"title": "intuition", "engine": "calculus", "element": "velocity as changing position"},
+            {"title": "simulation", "engine": "mechanics", "element": "time-evolving trajectory"},
+            {"title": "reveal", "engine": "mechanics", "element": "energy or momentum invariant"},
+        ],
+    },
+    "rotation": {
+        "motif": "torque vectors turn a rigid body around a fixed axis",
+        "camera_notes": [
+            "Mark the axis and center of mass before adding the force.",
+            "Show the torque lever arm perpendicular to the force.",
+            "Compare angular speed with rotational kinetic energy.",
+        ],
+        "visuals": [
+            {"title": "setup", "engine": "rotational_mechanics", "element": "axis, body, and lever arm"},
+            {"title": "intuition", "engine": "geometry", "element": "perpendicular torque arm"},
+            {"title": "simulation", "engine": "rotational_mechanics", "element": "angle and angular velocity"},
+            {"title": "reveal", "engine": "mechanics", "element": "energy and angular momentum"},
+        ],
+    },
+    "fluid": {
+        "motif": "streamlines expose incompressible flow around its sources and vortices",
+        "camera_notes": [
+            "Establish the flow direction and the fluid region.",
+            "Trace velocity vectors from a source or around a vortex.",
+            "Reveal divergence and circulation as local flow diagnostics.",
+        ],
+        "visuals": [
+            {"title": "setup", "engine": "fluids", "element": "flow field and reference frame"},
+            {"title": "intuition", "engine": "vector_calculus", "element": "velocity, divergence, and curl"},
+            {"title": "simulation", "engine": "fluids", "element": "streamlines around flow features"},
+            {"title": "reveal", "engine": "fluids", "element": "continuity and conserved flux"},
+        ],
+    },
+    "electrodynamics": {
+        "motif": "electric and magnetic fields jointly determine force and energy flow",
+        "camera_notes": [
+            "Label charges and current direction before drawing the fields.",
+            "Separate electric and magnetic field directions with distinct colors.",
+            "Add a moving test charge to reveal the Lorentz force.",
+        ],
+        "visuals": [
+            {"title": "setup", "engine": "electrodynamics", "element": "charges, currents, and reference point"},
+            {"title": "intuition", "engine": "electrodynamics", "element": "electric and magnetic field vectors"},
+            {"title": "simulation", "engine": "electrodynamics", "element": "Lorentz force on a test charge"},
+            {"title": "reveal", "engine": "electrodynamics", "element": "field energy and Poynting flux"},
+        ],
+    },
+    "advanced_calculus": {
+        "motif": "local derivatives build a geometric map of change",
+        "camera_notes": [
+            "Start with the scalar surface or curve and a marked point.",
+            "Reveal the gradient direction and the local tangent approximation.",
+            "Compare nearby samples with the first- and second-order model.",
+        ],
+        "visuals": [
+            {"title": "setup", "engine": "advanced_calculus", "element": "scalar field and sample point"},
+            {"title": "intuition", "engine": "advanced_calculus", "element": "gradient and directional derivative"},
+            {"title": "simulation", "engine": "linear_algebra", "element": "Jacobian as a local transformation"},
+            {"title": "reveal", "engine": "advanced_calculus", "element": "Hessian and curvature"},
+        ],
+    },
+}
+
 
 @dataclass(frozen=True)
 class SceneBeat:
@@ -164,10 +279,18 @@ class NarrativeEngine:
         topic_key = topic.lower()
         if "wave" in topic_key:
             return ["waves", "mechanics", "calculus"]
+        if any(term in topic_key for term in ("fluid", "vortex", "streamline", "flow")):
+            return ["fluids", "vector_calculus", "geometry"]
+        if any(term in topic_key for term in ("rotation", "rotational", "torque", "angular momentum")):
+            return ["rotational_mechanics", "mechanics", "geometry"]
+        if "electrodynamic" in topic_key or "electromagnet" in topic_key:
+            return ["electrodynamics", "electrostatics", "magnetics"]
         if "field" in topic_key or "electric" in topic_key or "magnet" in topic_key:
             return ["electrostatics", "magnetics", "geometry"]
         if "vector" in topic_key or "matrix" in topic_key:
             return ["linear_algebra", "geometry", "calculus"]
+        if any(term in topic_key for term in ("derivative", "integral", "calculus", "taylor")):
+            return ["advanced_calculus", "calculus", "geometry"]
         if "orbit" in topic_key or "motion" in topic_key or "collision" in topic_key:
             return ["mechanics", "kinematics", "calculus"]
         return ["mechanics", "calculus", "waves"]
@@ -184,6 +307,14 @@ class NarrativeEngine:
         motif_key = "default"
         if "wave" in topic_name.lower():
             motif_key = "wave"
+        elif any(term in topic_name.lower() for term in ("fluid", "vortex", "streamline", "flow")):
+            motif_key = "fluid"
+        elif any(term in topic_name.lower() for term in ("rotation", "rotational", "torque", "angular momentum")):
+            motif_key = "rotation"
+        elif "electrodynamic" in topic_name.lower() or "electromagnet" in topic_name.lower():
+            motif_key = "electrodynamics"
+        elif any(term in topic_name.lower() for term in ("derivative", "integral", "calculus", "taylor")):
+            motif_key = "advanced_calculus"
         elif "field" in topic_name.lower() or "electric" in topic_name.lower() or "magnet" in topic_name.lower():
             motif_key = "field"
         elif "vector" in topic_name.lower() or "matrix" in topic_name.lower():
@@ -206,7 +337,10 @@ class NarrativeEngine:
             f"{beat.title.capitalize()}: {beat.goal} {beat.detail}."
             for beat in beats
         ]
-        base_template = TEMPLATE_LIBRARY.get(topic_name.lower(), TEMPLATE_LIBRARY["default"])
+        base_template = TEMPLATE_LIBRARY.get(
+            topic_name.lower(),
+            {**TEMPLATE_LIBRARY["default"], **FAMILY_TEMPLATES.get(motif_key, {})},
+        )
         return {
             "topic": topic_name,
             "domains": domain_list,
@@ -235,6 +369,14 @@ class NarrativeEngine:
         key_equations = []
         if "wave" in topic_key:
             key_equations = [r"y(x,t)=A \sin(kx-\omega t+\phi)", r"v = \lambda f"]
+        elif any(term in topic_key for term in ("rotation", "rotational", "torque", "angular momentum")):
+            key_equations = [r"\tau = I\alpha", r"L=I\omega", r"K_{\mathrm{rot}}=\frac{1}{2}I\omega^2"]
+        elif any(term in topic_key for term in ("fluid", "vortex", "streamline", "flow")):
+            key_equations = [r"\nabla\cdot\mathbf{u}=0", r"\frac{D\mathbf{u}}{Dt}=-\frac{1}{\rho}\nabla p+\nu\nabla^2\mathbf{u}"]
+        elif "electrodynamic" in topic_key or "electromagnet" in topic_key:
+            key_equations = [r"\mathbf{F}=q(\mathbf{E}+\mathbf{v}\times\mathbf{B})", r"\nabla\times\mathbf{B}=\mu_0\mathbf{J}+\mu_0\epsilon_0\frac{\partial\mathbf{E}}{\partial t}"]
+        elif "derivative" in topic_key or "calculus" in topic_key or "taylor" in topic_key:
+            key_equations = [r"\nabla f", r"f(\mathbf{x}+\Delta\mathbf{x})\approx f(\mathbf{x})+\nabla f\cdot\Delta\mathbf{x}"]
         elif "pend" in topic_key:
             key_equations = [r"\theta'' + \frac{g}{L}\sin\theta = 0", r"E = \frac{1}{2}mL^2\dot{\theta}^2 + mgL(1 - \cos\theta)"]
         elif "field" in topic_key or "electric" in topic_key or "magnet" in topic_key:
