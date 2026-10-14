@@ -40,7 +40,8 @@ from pathlib import Path
 # Paths and constants
 # ────────────────────────────────────────────────────────────────────────
 OUTPUT_DIR       = Path("output_shorts")
-CSV_FILE         = Path("content_batch.csv")
+DEFAULT_CSV_FILE = Path("content_batch.csv")
+CSV_FILE         = DEFAULT_CSV_FILE
 VOICE_SAMPLE     = Path("saem_voice_sample.wav")
 MEDIA_DIR        = Path("media")
 TEMP_AUDIO       = Path("temp_audio")
@@ -148,6 +149,12 @@ def parse_args():
         description="Batch production runner for Manim physics videos."
     )
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument(
+        "--csv",
+        type=Path,
+        default=DEFAULT_CSV_FILE,
+        help="Input batch CSV (default: content_batch.csv).",
+    )
     p.add_argument("--only", type=str, default="")
     p.add_argument("--resume", action="store_true")
     p.add_argument("--chunk", type=int, default=0)
@@ -160,6 +167,12 @@ def parse_args():
                    help="Skip VoiceoverScene; use manifest durations.")
     p.add_argument("--skip-audio", action="store_true",
                    help="Generate silent placeholder audio (testing).")
+    p.add_argument(
+        "--voice-backend",
+        choices=["coqui", "espeak"],
+        default="coqui",
+        help="Narration synthesizer. 'espeak' is offline and does not clone a voice.",
+    )
     p.add_argument("--skip-stitch", action="store_true",
                    help="Keep raw MP4 without FFmpeg mux.")
     p.add_argument("--orientation", default="",
@@ -191,7 +204,9 @@ def preflight_csv() -> None:
 # Main
 # ────────────────────────────────────────────────────────────────────────
 def process_batch():
+    global CSV_FILE
     args = parse_args()
+    CSV_FILE = args.csv
     OUTPUT_DIR.mkdir(exist_ok=True)
     TEMP_AUDIO.mkdir(exist_ok=True)
 
@@ -276,6 +291,7 @@ def process_batch():
                     draft=args.draft,
                     no_voiceover=args.no_voiceover,
                     skip_audio=args.skip_audio,
+                    voice_backend=args.voice_backend,
                     skip_stitch=args.skip_stitch,
                     orientation_override=args.orientation,
                 )
@@ -334,7 +350,8 @@ def process_batch():
 # ────────────────────────────────────────────────────────────────────────
 def _render_one(row: dict, vid_id: str, final_output: Path,
                 draft: bool = False, no_voiceover: bool = False,
-                skip_audio: bool = False, skip_stitch: bool = False,
+                skip_audio: bool = False, voice_backend: str = "coqui",
+                skip_stitch: bool = False,
                 orientation_override: str = ""):
     voice = pad = None
     raw_output = OUTPUT_DIR / f"{vid_id}_raw.mp4"
@@ -343,6 +360,8 @@ def _render_one(row: dict, vid_id: str, final_output: Path,
         # ---- 1. Audio ------------------------------------------------
         if skip_audio:
             voice, pad, duration = _make_silent_audio(row, vid_id)
+        elif voice_backend == "espeak":
+            voice, pad, duration = _synthesize_espeak_for_row(row, vid_id)
         else:
             try:
                 # Lazy import so --dry-run doesn't pull in torch/XTTS
@@ -453,6 +472,68 @@ def _make_silent_audio(row: dict, vid_id: str) -> tuple[str, str, float]:
             w.writeframes(b"\x00\x00" * n_frames)
 
     return str(path), str(pad_path), duration
+
+
+def _synthesize_espeak_for_row(row: dict, vid_id: str) -> tuple[str, str, float]:
+    """Create offline narration and fit its duration to the selected format."""
+    import wave
+
+    script = str_val(row, "audio_script")
+    if not script:
+        raise ValueError(f"Audio script is missing for video ID '{vid_id}'")
+    orientation = str_val(row, "orientation").lower()
+    if orientation not in ("horizontal", "vertical"):
+        raise ValueError(f"Unsupported orientation for '{vid_id}': {orientation!r}")
+
+    target_duration = 175.0 if orientation == "horizontal" else 55.0
+    word_count = len(script.split())
+    speech_rate = round(word_count * 60.0 / target_duration)
+    TEMP_AUDIO.mkdir(parents=True, exist_ok=True)
+    voice_path = TEMP_AUDIO / f"{vid_id}_voice.wav"
+    pad_path = TEMP_AUDIO / f"{vid_id}_pad.wav"
+    source_path = TEMP_AUDIO / f"{vid_id}_espeak_source.wav"
+    script_path = TEMP_AUDIO / f"{vid_id}_espeak_script.txt"
+    script_path.write_text(script, encoding="utf-8")
+
+    try:
+        subprocess.run(
+            [
+                "espeak-ng", "-v", "en-us", "-s", str(speech_rate),
+                "-w", str(source_path), "-f", str(script_path),
+            ],
+            check=True,
+        )
+        with wave.open(str(source_path), "rb") as source:
+            source_duration = source.getnframes() / source.getframerate()
+        if source_duration <= 0:
+            raise ValueError(f"espeak-ng produced empty narration for '{vid_id}'")
+
+        tempo = source_duration / target_duration
+        if not 0.5 <= tempo <= 2.0:
+            raise ValueError(
+                f"espeak narration for '{vid_id}' needs unsupported tempo "
+                f"factor {tempo:.2f}; adjust the script or speech rate"
+            )
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", str(source_path),
+                "-af", f"atempo={tempo:.8f},apad,atrim=duration={target_duration}",
+                "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le",
+                str(voice_path),
+            ],
+            check=True,
+        )
+        with wave.open(str(pad_path), "wb") as pad:
+            pad.setnchannels(1)
+            pad.setsampwidth(2)
+            pad.setframerate(44100)
+            pad.writeframes(b"\x00\x00" * int(target_duration * 44100))
+    finally:
+        source_path.unlink(missing_ok=True)
+        script_path.unlink(missing_ok=True)
+
+    return str(voice_path), str(pad_path), target_duration
 
 
 if __name__ == "__main__":

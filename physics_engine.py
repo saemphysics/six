@@ -171,10 +171,16 @@ class KinematicsEngine:
 
     @staticmethod
     def constant_acceleration_position(x0: float, v0: float, a: float, t: float) -> float:
+        x0, v0, a, t = map(float, (x0, v0, a, t))
+        if not all(np.isfinite(value) for value in (x0, v0, a, t)):
+            raise ValueError("kinematics parameters must be finite")
         return float(x0 + v0 * t + 0.5 * a * t ** 2)
 
     @staticmethod
     def constant_acceleration_velocity(v0: float, a: float, t: float) -> float:
+        v0, a, t = map(float, (v0, a, t))
+        if not all(np.isfinite(value) for value in (v0, a, t)):
+            raise ValueError("kinematics parameters must be finite")
         return float(v0 + a * t)
 
 
@@ -659,10 +665,22 @@ class WavesEngine:
 
     @staticmethod
     def traveling_wave(amplitude: float, wave_number: float, angular_frequency: float, phase: float, x: float, t: float) -> float:
+        amplitude, wave_number, angular_frequency, phase, x, t = map(
+            float,
+            (amplitude, wave_number, angular_frequency, phase, x, t),
+        )
+        if not all(np.isfinite(value) for value in (amplitude, wave_number, angular_frequency, phase, x, t)):
+            raise ValueError("wave parameters and coordinates must be finite")
         return float(amplitude * np.sin(wave_number * x - angular_frequency * t + phase))
 
     @staticmethod
     def standing_wave(amplitude: float, wave_number: float, angular_frequency: float, phase: float, x: float, t: float) -> float:
+        amplitude, wave_number, angular_frequency, phase, x, t = map(
+            float,
+            (amplitude, wave_number, angular_frequency, phase, x, t),
+        )
+        if not all(np.isfinite(value) for value in (amplitude, wave_number, angular_frequency, phase, x, t)):
+            raise ValueError("wave parameters and coordinates must be finite")
         return float(2.0 * amplitude * np.sin(wave_number * x + phase) * np.cos(angular_frequency * t))
 
     @staticmethod
@@ -841,7 +859,10 @@ class UniversalEngine:
     """Top-level engine for math/physics explanation and simulation."""
 
     def __init__(self, default_dt: float = 1.0 / 120.0):
-        self.default_dt = float(default_dt)
+        default_dt = float(default_dt)
+        if not np.isfinite(default_dt) or default_dt <= 0:
+            raise ValueError("default_dt must be finite and positive")
+        self.default_dt = default_dt
 
     @staticmethod
     def available_domains() -> list[str]:
@@ -1054,6 +1075,10 @@ class UniversalEngine:
 
         dt_value = self.default_dt if dt is None else float(dt)
         duration_value = float(duration)
+        if not np.isfinite(dt_value) or dt_value <= 0:
+            raise ValueError("dt must be finite and positive")
+        if not np.isfinite(duration_value) or duration_value < 0:
+            raise ValueError("duration must be finite and non-negative")
 
         if any(term in topic_key for term in ("rotation", "rotational", "torque", "angular momentum")):
             times, states = RotationalMechanicsEngine.simulate_constant_torque(

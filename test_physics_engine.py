@@ -175,6 +175,15 @@ def test_rotational_mechanics_obeys_torque_and_energy_relations():
     assert states[-1] == pytest.approx([5 / 6, 10 / 6])
 
 
+def test_kinematics_and_universal_engine_reject_nonfinite_values():
+    with pytest.raises(ValueError):
+        KinematicsEngine.constant_acceleration_position(0.0, 0.0, float("nan"), 1.0)
+    with pytest.raises(ValueError):
+        UniversalEngine(default_dt=0.0)
+    with pytest.raises(ValueError):
+        UniversalEngine().simulate("wave", duration=-1.0, dt=0.1)
+
+
 def test_force_driven_mechanics_tracks_time_sampled_particle_states():
     times, states = MechanicsEngine.simulate_force_field(
         lambda _time, _position, _velocity: np.array([0.0, -2.0]),

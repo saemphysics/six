@@ -33,10 +33,18 @@ def _bounds(orientation: str):
     return -8.0, 8.0, -4.5, 4.5         # 16:9
 
 
+def audio_word_bounds(orientation: str) -> tuple[int, int]:
+    """Return spoken-word targets for a one-minute Short or three-minute lecture."""
+    return AUDIO_WORD_BOUNDS.get(str(orientation).lower(), AUDIO_WORD_BOUNDS["vertical"])
+
+
 # ────────────────────────────────────────────────────────────────────────
 # Constants
 # ────────────────────────────────────────────────────────────────────────
-WORD_MIN, WORD_MAX = 200, 700
+AUDIO_WORD_BOUNDS = {
+    "vertical": (120, 145),
+    "horizontal": (350, 410),
+}
 HINDI_WORD_MAX_MULT = 1.2
 EDGE_MARGIN = 0.5
 
@@ -237,16 +245,18 @@ def validate_csv(path: str) -> bool:
             # --- audio word count
             script = row[12].strip()
             words = script.split()
-            if words and not (WORD_MIN <= len(words) <= WORD_MAX):
+            word_min, word_max = audio_word_bounds(row_orientation)
+            if words and not (word_min <= len(words) <= word_max):
                 print(f"[WARN] Row {row_idx} ({vid}): {len(words)} words "
-                      f"(want {WORD_MIN}-{WORD_MAX}).")
+                      f"(want {word_min}-{word_max} for {row_orientation}).")
 
             if 0 <= idx_script_hi < len(row) and row[idx_script_hi].strip():
                 hi_words = row[idx_script_hi].split()
-                if not (WORD_MIN <= len(hi_words) <=
-                        WORD_MAX * HINDI_WORD_MAX_MULT):
+                hi_max = int(word_max * HINDI_WORD_MAX_MULT)
+                if not (word_min <= len(hi_words) <= hi_max):
                     print(f"[WARN] Row {row_idx} ({vid}): Hindi script "
-                          f"{len(hi_words)} words.")
+                          f"{len(hi_words)} words (want {word_min}-{hi_max} "
+                          f"for {row_orientation}).")
 
             # --- PYQ structural integrity
             if concept == "PYQ":
