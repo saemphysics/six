@@ -162,6 +162,60 @@ class AdvancedCalculusEngine:
             raise ValueError("curve function must return finite values matching the samples")
         return np.column_stack((x, y))
 
+    @staticmethod
+    def directional_derivative(scalar_field, point, direction, *, h: float = 1e-5) -> float:
+        p = np.asarray(point, dtype=np.float64)
+        vector = np.asarray(direction, dtype=np.float64)
+        h = float(h)
+        if p.ndim != 1 or p.size == 0 or vector.shape != p.shape:
+            raise ValueError("point and direction must be matching non-empty vectors")
+        if not np.all(np.isfinite(p)) or not np.all(np.isfinite(vector)):
+            raise ValueError("point and direction must be finite")
+        norm = np.linalg.norm(vector)
+        if norm == 0.0:
+            raise ValueError("direction must be non-zero")
+        if not np.isfinite(h) or h <= 0:
+            raise ValueError("h must be finite and positive")
+        unit = vector / norm
+        value = (scalar_field(p + h * unit) - scalar_field(p - h * unit)) / (2 * h)
+        if not np.isfinite(value):
+            raise FloatingPointError("directional derivative is non-finite")
+        return float(value)
+
+    @staticmethod
+    def arc_length(parametric_curve, start: float, stop: float, samples: int = 1000) -> float:
+        start, stop, samples = float(start), float(stop), int(samples)
+        if not np.isfinite(start) or not np.isfinite(stop) or stop <= start:
+            raise ValueError("curve bounds must be finite and increasing")
+        if samples < 2:
+            raise ValueError("samples must be at least 2")
+        parameters = np.linspace(start, stop, samples)
+        points = np.asarray(parametric_curve(parameters), dtype=np.float64)
+        if points.ndim != 2 or points.shape[0] != samples or points.shape[1] == 0:
+            raise ValueError("parametric curve must return one non-empty point per sample")
+        if not np.all(np.isfinite(points)):
+            raise FloatingPointError("parametric curve returned non-finite points")
+        return float(np.sum(np.linalg.norm(np.diff(points, axis=0), axis=1)))
+
+    @staticmethod
+    def line_integral(vector_field, parametric_curve, start: float, stop: float, samples: int = 1000) -> float:
+        start, stop, samples = float(start), float(stop), int(samples)
+        if not np.isfinite(start) or not np.isfinite(stop) or stop <= start:
+            raise ValueError("curve bounds must be finite and increasing")
+        if samples < 3:
+            raise ValueError("samples must be at least 3")
+        parameters = np.linspace(start, stop, samples)
+        points = np.asarray(parametric_curve(parameters), dtype=np.float64)
+        if points.ndim != 2 or points.shape[0] != samples or points.shape[1] == 0:
+            raise ValueError("parametric curve must return one non-empty point per sample")
+        if not np.all(np.isfinite(points)):
+            raise FloatingPointError("parametric curve returned non-finite points")
+        tangents = np.gradient(points, parameters, axis=0, edge_order=2)
+        values = np.asarray([vector_field(point) for point in points], dtype=np.float64)
+        if values.shape != points.shape or not np.all(np.isfinite(values)):
+            raise ValueError("vector field must return finite vectors matching curve dimension")
+        return float(np.trapezoid(np.einsum("ij,ij->i", values, tangents), parameters))
+
 
 class GeometryEngine:
     """Euclidean geometry primitives used in visual proofs and diagrams."""
@@ -216,6 +270,37 @@ class GeometryEngine:
             raise ValueError("polygon vertices must be finite")
         x, y = points.T
         return float(0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
+
+    @staticmethod
+    def polygon_centroid(vertices) -> np.ndarray:
+        points = np.asarray(vertices, dtype=np.float64)
+        if points.ndim != 2 or points.shape[1] != 2 or points.shape[0] < 3:
+            raise ValueError("polygon requires at least three 2D vertices")
+        if not np.all(np.isfinite(points)):
+            raise ValueError("polygon vertices must be finite")
+        following = np.roll(points, -1, axis=0)
+        cross = points[:, 0] * following[:, 1] - following[:, 0] * points[:, 1]
+        signed_area_twice = np.sum(cross)
+        if abs(signed_area_twice) <= 1e-12:
+            raise ValueError("polygon centroid is undefined for zero-area vertices")
+        weighted_sum = np.sum((points + following) * cross[:, None], axis=0)
+        return weighted_sum / (3.0 * signed_area_twice)
+
+    @staticmethod
+    def affine_transform(points, matrix, translation=None) -> np.ndarray:
+        coordinates = np.asarray(points, dtype=np.float64)
+        transform = np.asarray(matrix, dtype=np.float64)
+        if coordinates.ndim != 2 or coordinates.shape[1] == 0:
+            raise ValueError("points must be a non-empty matrix of coordinates")
+        if transform.shape != (coordinates.shape[1], coordinates.shape[1]):
+            raise ValueError("matrix dimensions must match point dimensions")
+        offset = (np.zeros(coordinates.shape[1], dtype=np.float64)
+                  if translation is None else np.asarray(translation, dtype=np.float64))
+        if offset.shape != (coordinates.shape[1],):
+            raise ValueError("translation must match point dimensions")
+        if not all(np.all(np.isfinite(value)) for value in (coordinates, transform, offset)):
+            raise ValueError("points, matrix, and translation must be finite")
+        return coordinates @ transform.T + offset
 
     @staticmethod
     def rotate(point, angle_radians: float, *, origin=(0.0, 0.0)) -> np.ndarray:
@@ -291,6 +376,33 @@ class LinearAlgebraEngine:
         if m.ndim != 2 or min(m.shape, default=0) == 0 or not np.all(np.isfinite(m)):
             raise ValueError("SVD requires a finite non-empty matrix")
         return np.linalg.svd(m, full_matrices=False)
+
+    @staticmethod
+    def least_squares(matrix, target) -> np.ndarray:
+        m = np.asarray(matrix, dtype=np.float64)
+        b = np.asarray(target, dtype=np.float64)
+        if m.ndim != 2 or min(m.shape, default=0) == 0:
+            raise ValueError("least-squares matrix must be non-empty and two-dimensional")
+        if b.ndim not in (1, 2) or b.shape[0] != m.shape[0]:
+            raise ValueError("target must have a matching leading dimension")
+        if not np.all(np.isfinite(m)) or not np.all(np.isfinite(b)):
+            raise ValueError("matrix and target must be finite")
+        solution, *_ = np.linalg.lstsq(m, b, rcond=None)
+        return solution
+
+    @staticmethod
+    def sample_matrix_interpolation(matrix_start, matrix_end, samples: int = 30) -> np.ndarray:
+        start = np.asarray(matrix_start, dtype=np.float64)
+        end = np.asarray(matrix_end, dtype=np.float64)
+        samples = int(samples)
+        if start.ndim != 2 or start.shape != end.shape or min(start.shape, default=0) == 0:
+            raise ValueError("endpoint matrices must be non-empty and have matching shapes")
+        if not np.all(np.isfinite(start)) or not np.all(np.isfinite(end)):
+            raise ValueError("endpoint matrices must be finite")
+        if samples < 2:
+            raise ValueError("samples must be at least 2")
+        fractions = np.linspace(0.0, 1.0, samples)
+        return (1.0 - fractions[:, None, None]) * start + fractions[:, None, None] * end
 
 
 class VectorCalculusEngine:

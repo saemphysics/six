@@ -102,6 +102,20 @@ FAMILY_TEMPLATES = {
             {"title": "reveal", "engine": "linear_algebra", "element": "preserved structure"},
         ],
     },
+    "geometry": {
+        "motif": "a geometric invariant emerges from measured shapes and transformations",
+        "camera_notes": [
+            "Establish the vertices and reference frame before measuring the shape.",
+            "Construct the relevant center, angle, or transformation from visible points.",
+            "Revisit the invariant after the construction so the result feels earned.",
+        ],
+        "visuals": [
+            {"title": "setup", "engine": "geometry", "element": "vertices and coordinate frame"},
+            {"title": "intuition", "engine": "geometry", "element": "angles, lengths, and centroid"},
+            {"title": "simulation", "engine": "linear_algebra", "element": "affine transformation of the shape"},
+            {"title": "reveal", "engine": "geometry", "element": "preserved geometric invariant"},
+        ],
+    },
     "motion": {
         "motif": "a tracked trajectory anchored to a visible coordinate frame",
         "camera_notes": [
@@ -287,10 +301,15 @@ class NarrativeEngine:
             return ["electrodynamics", "electrostatics", "magnetics"]
         if "field" in topic_key or "electric" in topic_key or "magnet" in topic_key:
             return ["electrostatics", "magnetics", "geometry"]
-        if "vector" in topic_key or "matrix" in topic_key:
+        if any(term in topic_key for term in ("linear algebra", "vector", "matrix", "eigenvalue")):
             return ["linear_algebra", "geometry", "calculus"]
-        if any(term in topic_key for term in ("derivative", "integral", "calculus", "taylor")):
+        if any(term in topic_key for term in (
+            "derivative", "integral", "calculus", "taylor", "jacobian",
+            "hessian", "curvature",
+        )):
             return ["advanced_calculus", "calculus", "geometry"]
+        if any(term in topic_key for term in ("geometry", "triangle", "circle", "polygon")):
+            return ["geometry", "linear_algebra", "calculus"]
         if "orbit" in topic_key or "motion" in topic_key or "collision" in topic_key:
             return ["mechanics", "kinematics", "calculus"]
         return ["mechanics", "calculus", "waves"]
@@ -313,11 +332,16 @@ class NarrativeEngine:
             motif_key = "rotation"
         elif "electrodynamic" in topic_name.lower() or "electromagnet" in topic_name.lower():
             motif_key = "electrodynamics"
-        elif any(term in topic_name.lower() for term in ("derivative", "integral", "calculus", "taylor")):
+        elif any(term in topic_name.lower() for term in (
+            "derivative", "integral", "calculus", "taylor", "jacobian",
+            "hessian", "curvature",
+        )):
             motif_key = "advanced_calculus"
+        elif any(term in topic_name.lower() for term in ("geometry", "triangle", "circle", "polygon")):
+            motif_key = "geometry"
         elif "field" in topic_name.lower() or "electric" in topic_name.lower() or "magnet" in topic_name.lower():
             motif_key = "field"
-        elif "vector" in topic_name.lower() or "matrix" in topic_name.lower():
+        elif any(term in topic_name.lower() for term in ("linear algebra", "vector", "matrix", "eigenvalue")):
             motif_key = "vector"
         elif "motion" in topic_name.lower() or "orbit" in topic_name.lower() or "collision" in topic_name.lower():
             motif_key = "motion"

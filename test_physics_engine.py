@@ -175,6 +175,35 @@ def test_rotational_mechanics_obeys_torque_and_energy_relations():
     assert states[-1] == pytest.approx([5 / 6, 10 / 6])
 
 
+def test_force_driven_mechanics_tracks_time_sampled_particle_states():
+    times, states = MechanicsEngine.simulate_force_field(
+        lambda _time, _position, _velocity: np.array([0.0, -2.0]),
+        mass=2.0,
+        initial_position=[0.0, 0.0],
+        initial_velocity=[3.0, 4.0],
+        duration=1.0,
+        dt=0.01,
+    )
+
+    assert times[-1] == pytest.approx(1.0)
+    assert states[-1, :2] == pytest.approx([3.0, 3.5], abs=1e-10)
+    assert states[-1, 2:] == pytest.approx([3.0, 3.0], abs=1e-10)
+
+
+def test_variable_torque_simulation_matches_constant_torque_solution():
+    times, states = RotationalMechanicsEngine.simulate_torque(
+        lambda _time, _angle, _omega: 4.0,
+        moment_of_inertia=2.0,
+        initial_angle=0.2,
+        initial_angular_velocity=1.0,
+        duration=2.0,
+        dt=0.02,
+    )
+
+    assert times[-1] == pytest.approx(2.0)
+    assert states[-1] == pytest.approx([6.2, 5.0], abs=1e-10)
+
+
 def test_electrodynamics_lorentz_force_and_poynting_vector():
     force = ElectrodynamicsEngine.lorentz_force(
         2.0,
@@ -188,6 +217,36 @@ def test_electrodynamics_lorentz_force_and_poynting_vector():
         [0.0, 1.0, 0.0],
         mu0=2.0,
     ) == pytest.approx([0.0, 0.0, 0.5])
+
+
+def test_plane_wave_fields_and_charged_particle_are_frame_sampled():
+    positions = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.25]])
+    times = np.array([0.0, 0.25])
+    electric, magnetic = ElectrodynamicsEngine.plane_wave_fields(
+        positions,
+        times,
+        electric_amplitude=[1.0, 0.0, 0.0],
+        propagation_direction=[0.0, 0.0, 1.0],
+        frequency=1.0,
+        speed_of_light=1.0,
+    )
+    particle_times, particle_states = ElectrodynamicsEngine.simulate_charged_particle(
+        charge=1.0,
+        mass=2.0,
+        electric_field_at=lambda _time, _position: np.array([2.0, 0.0, 0.0]),
+        magnetic_field_at=lambda _time, _position: np.zeros(3),
+        initial_position=[0.0, 0.0, 0.0],
+        initial_velocity=[0.0, 0.0, 0.0],
+        duration=1.0,
+        dt=0.01,
+    )
+
+    assert electric.shape == magnetic.shape == (2, 2, 3)
+    assert np.allclose(np.sum(electric * magnetic, axis=-1), 0.0)
+    assert ElectrodynamicsEngine.poynting_vector(electric[1, 0], magnetic[1, 0])[2] > 0
+    assert particle_times[-1] == pytest.approx(1.0)
+    assert particle_states[-1, 0] == pytest.approx(0.5, abs=1e-10)
+    assert particle_states[-1, 3] == pytest.approx(1.0, abs=1e-10)
 
 
 def test_fluid_source_and_vortex_are_divergence_free_away_from_singularities():
@@ -219,6 +278,45 @@ def test_wave_engine_superposition_and_phase_speed():
     assert summed == pytest.approx(expected)
     assert WavesEngine.phase_velocity(2.0, 6.0) == pytest.approx(3.0)
     assert WavesEngine.sample_wave(1.0, 2.0, 3.0, 0.0, [-1.0, 1.0], 11).shape == (11, 2)
+
+
+def test_wave_space_time_samples_match_traveling_wave():
+    x, times, field = WavesEngine.sample_spacetime(
+        amplitude=2.0,
+        wave_number=np.pi,
+        angular_frequency=np.pi,
+        phase=0.0,
+        x_range=[0.0, 2.0],
+        time_range=[0.0, 1.0],
+        samples_x=9,
+        samples_t=5,
+    )
+
+    assert field.shape == (5, 9)
+    assert x[0] == pytest.approx(0.0)
+    assert times[-1] == pytest.approx(1.0)
+    assert field[0, 2] == pytest.approx(2.0)
+    assert field[4, 2] == pytest.approx(-2.0)
+
+
+def test_fluid_streamlines_and_pathlines_track_distinct_flow_models():
+    streamline = FluidsEngine.trace_streamline(
+        lambda point: FluidsEngine.vortex_flow(point[0], point[1], 1.0),
+        seed=[1.0, 0.0],
+        step_size=0.01,
+        steps=200,
+    )
+    times, pathline = FluidsEngine.trace_pathline(
+        lambda _time, _point: np.array([2.0, -1.0]),
+        initial_position=[0.0, 0.0],
+        duration=1.0,
+        dt=0.05,
+    )
+
+    assert streamline.shape[1] == 2
+    assert np.linalg.norm(streamline[-1]) == pytest.approx(1.0, abs=1e-8)
+    assert times[-1] == pytest.approx(1.0)
+    assert pathline[-1] == pytest.approx([2.0, -1.0])
 
 
 def test_catalog_and_narrative_route_new_independent_engines():
@@ -295,6 +393,15 @@ def test_narrative_blueprints_select_visuals_by_topic_family(topic, motif, eleme
     assert any(visual["element"] == element for visual in plan["visuals"])
 
 
+def test_geometry_blueprint_and_linear_algebra_topic_routing():
+    geometry = NarrativeEngine.topic_blueprint("triangle geometry")
+    linear_algebra_domains = NarrativeEngine.choose_domains("linear algebra eigenvalues")
+
+    assert geometry["motif"] == "a geometric invariant emerges from measured shapes and transformations"
+    assert geometry["visuals"][0]["engine"] == "geometry"
+    assert linear_algebra_domains[0] == "linear_algebra"
+
+
 def test_narrative_blueprint_keeps_exact_topic_template_precedence():
     plan = NarrativeEngine.topic_blueprint("wave interference")
 
@@ -334,6 +441,16 @@ def test_universal_engine_generates_a_valid_topic_workflow():
     assert result["scene_plan"]
     assert result["simulator"]["type"] == "rk4"
     assert result["intention"] == "mathematically precise and physically insightful"
+    assert result["simulator"]["wave_field"].ndim == 2
+
+
+def test_universal_engine_builds_time_sampled_fluid_pathlines():
+    result = UniversalEngine(default_dt=0.02).simulate("vortex flow", duration=0.5)
+
+    assert result["type"] == "trajectory"
+    assert result["domain"] == "fluids"
+    assert result["times"][-1] == pytest.approx(0.5)
+    assert result["positions"].shape == (len(result["times"]), 2)
 
 
 @pytest.mark.parametrize(

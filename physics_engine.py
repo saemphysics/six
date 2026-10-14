@@ -238,6 +238,45 @@ class MechanicsEngine:
             raise ValueError("mass must be finite and positive")
         return force_array / mass
 
+    @staticmethod
+    def simulate_force_field(
+        force_at: Callable[[float, np.ndarray, np.ndarray], np.ndarray],
+        mass: float,
+        initial_position,
+        initial_velocity,
+        duration: float,
+        dt: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Integrate a particle under F(time, position, velocity), returning [x, v]."""
+        mass = float(mass)
+        position = _validate_state_vector(initial_position)
+        velocity = _validate_state_vector(initial_velocity)
+        if position.shape != velocity.shape:
+            raise ValueError("initial position and velocity must have matching dimensions")
+        if not np.isfinite(mass) or mass <= 0:
+            raise ValueError("mass must be finite and positive")
+
+        dimension = position.size
+
+        def derivative(time: float, state: np.ndarray) -> np.ndarray:
+            current_position = state[:dimension]
+            current_velocity = state[dimension:]
+            force = np.asarray(
+                force_at(time, current_position.copy(), current_velocity.copy()),
+                dtype=np.float64,
+            )
+            if force.shape != (dimension,) or not np.all(np.isfinite(force)):
+                raise ValueError("force must return a finite vector matching position")
+            return np.concatenate((current_velocity, force / mass))
+
+        times, states = integrate_rk4(
+            derivative,
+            np.concatenate((position, velocity)),
+            duration,
+            dt,
+        )
+        return times, states
+
 
 class RotationalMechanicsEngine:
     """Rigid-body rotational dynamics about a fixed axis."""
@@ -292,6 +331,35 @@ class RotationalMechanicsEngine:
         alpha = torque / inertia
         states = np.column_stack((angle + omega * times + 0.5 * alpha * times**2, omega + alpha * times))
         return times, states
+
+    @staticmethod
+    def simulate_torque(
+        torque_at: Callable[[float, float, float], float],
+        moment_of_inertia: float,
+        initial_angle: float,
+        initial_angular_velocity: float,
+        duration: float,
+        dt: float,
+        *,
+        damping: float = 0.0,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Integrate angle and angular velocity under a time-varying torque."""
+        inertia, angle, omega, damping, duration, dt = map(
+            float,
+            (moment_of_inertia, initial_angle, initial_angular_velocity, damping, duration, dt),
+        )
+        if not all(np.isfinite(value) for value in (inertia, angle, omega, damping)):
+            raise ValueError("rotational parameters must be finite")
+        if inertia <= 0 or damping < 0:
+            raise ValueError("moment of inertia must be positive and damping non-negative")
+
+        def derivative(time: float, state: np.ndarray) -> np.ndarray:
+            torque = float(torque_at(time, state[0], state[1]))
+            if not np.isfinite(torque):
+                raise ValueError("torque function must return a finite value")
+            return np.array([state[1], (torque - damping * state[1]) / inertia])
+
+        return integrate_rk4(derivative, [angle, omega], duration, dt)
 
 
 class ElectrostaticsEngine:
@@ -375,6 +443,87 @@ class ElectrodynamicsEngine:
             raise ValueError("mu0 must be finite and positive")
         return np.cross(electric, magnetic) / mu0
 
+    @staticmethod
+    def plane_wave_fields(
+        positions,
+        times,
+        electric_amplitude,
+        propagation_direction,
+        frequency: float,
+        *,
+        phase: float = 0.0,
+        speed_of_light: float = 299_792_458.0,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Sample transverse E and B fields for a monochromatic plane wave.
+
+        Returned arrays have shape (time, position, 3); the magnetic field
+        obeys B = k_hat x E / c, so the fields and energy flux share direction.
+        """
+        points = np.asarray(positions, dtype=np.float64)
+        time_values = np.asarray(times, dtype=np.float64)
+        amplitude = np.asarray(electric_amplitude, dtype=np.float64)
+        direction = np.asarray(propagation_direction, dtype=np.float64)
+        frequency, phase, speed_of_light = map(float, (frequency, phase, speed_of_light))
+        if points.ndim != 2 or points.shape[1] != 3 or points.shape[0] == 0:
+            raise ValueError("positions must be a non-empty array of 3D points")
+        if time_values.ndim != 1 or time_values.size == 0:
+            raise ValueError("times must be a non-empty vector")
+        if amplitude.shape != (3,) or direction.shape != (3,):
+            raise ValueError("electric amplitude and propagation direction must be 3D vectors")
+        if not all(np.all(np.isfinite(value)) for value in (points, time_values, amplitude, direction)):
+            raise ValueError("wave positions, times, and vectors must be finite")
+        if not np.isfinite(frequency) or frequency < 0 or not np.isfinite(phase):
+            raise ValueError("frequency must be finite and non-negative and phase finite")
+        if not np.isfinite(speed_of_light) or speed_of_light <= 0:
+            raise ValueError("speed of light must be finite and positive")
+        direction_norm = np.linalg.norm(direction)
+        if direction_norm == 0.0:
+            raise ValueError("propagation direction must be non-zero")
+        unit_direction = direction / direction_norm
+        if abs(float(np.dot(amplitude, unit_direction))) > 1e-10 * max(1.0, np.linalg.norm(amplitude)):
+            raise ValueError("electric amplitude must be perpendicular to propagation direction")
+
+        angular_frequency = 2.0 * np.pi * frequency
+        wave_number = angular_frequency / speed_of_light
+        argument = (
+            angular_frequency * time_values[:, None]
+            - wave_number * (points @ unit_direction)[None, :]
+            + phase
+        )
+        electric = np.sin(argument)[:, :, None] * amplitude[None, None, :]
+        magnetic = np.cross(unit_direction, electric) / speed_of_light
+        return electric, magnetic
+
+    @staticmethod
+    def simulate_charged_particle(
+        charge: float,
+        mass: float,
+        electric_field_at: Callable[[float, np.ndarray], np.ndarray],
+        magnetic_field_at: Callable[[float, np.ndarray], np.ndarray],
+        initial_position,
+        initial_velocity,
+        duration: float,
+        dt: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        charge, mass = float(charge), float(mass)
+        if not np.isfinite(charge) or not np.isfinite(mass) or mass <= 0:
+            raise ValueError("charge must be finite and mass finite and positive")
+
+        def force_at(time: float, position: np.ndarray, velocity: np.ndarray) -> np.ndarray:
+            electric = np.asarray(electric_field_at(time, position), dtype=np.float64)
+            magnetic = np.asarray(magnetic_field_at(time, position), dtype=np.float64)
+            if electric.shape != position.shape or magnetic.shape != position.shape:
+                raise ValueError("electric and magnetic fields must match particle dimensions")
+            if not np.all(np.isfinite(electric)) or not np.all(np.isfinite(magnetic)):
+                raise ValueError("electric and magnetic fields must be finite")
+            if position.size != 3:
+                raise ValueError("charged-particle electrodynamics requires 3D states")
+            return ElectrodynamicsEngine.lorentz_force(charge, electric, velocity, magnetic)
+
+        return MechanicsEngine.simulate_force_field(
+            force_at, mass, initial_position, initial_velocity, duration, dt,
+        )
+
 
 class FluidsEngine:
     """Analytic 2D incompressible flow fields suitable for vector-field scenes."""
@@ -439,6 +588,71 @@ class FluidsEngine:
             raise ValueError("continuity terms must be finite")
         return divergence + density_rate
 
+    @staticmethod
+    def trace_streamline(
+        vector_field: Callable[[np.ndarray], np.ndarray],
+        seed,
+        step_size: float = 0.03,
+        steps: int = 400,
+        *,
+        bounds=None,
+    ) -> np.ndarray:
+        """Trace a steady 2D streamline using normalized-field RK4 steps."""
+        point = _validate_state_vector(seed)
+        step_size, steps = float(step_size), int(steps)
+        if point.shape != (2,) or not np.isfinite(step_size) or step_size <= 0 or steps < 1:
+            raise ValueError("seed must be 2D, step_size positive, and steps at least 1")
+        limits = None if bounds is None else np.asarray(bounds, dtype=np.float64)
+        if limits is not None and (
+            limits.shape != (2, 2) or not np.all(np.isfinite(limits))
+            or np.any(limits[:, 1] <= limits[:, 0])
+        ):
+            raise ValueError("bounds must be [[xmin, xmax], [ymin, ymax]]")
+
+        def tangent(position: np.ndarray) -> np.ndarray:
+            velocity = np.asarray(vector_field(position.copy()), dtype=np.float64)
+            if velocity.shape != (2,) or not np.all(np.isfinite(velocity)):
+                raise ValueError("vector field must return a finite 2D vector")
+            magnitude = np.linalg.norm(velocity)
+            return np.zeros(2) if magnitude <= 1e-12 else velocity / magnitude
+
+        points = [point.copy()]
+        for _ in range(steps):
+            k1 = tangent(point)
+            if np.linalg.norm(k1) == 0.0:
+                break
+            k2 = tangent(point + step_size * k1 / 2)
+            k3 = tangent(point + step_size * k2 / 2)
+            k4 = tangent(point + step_size * k3)
+            next_point = point + step_size * (k1 + 2 * k2 + 2 * k3 + k4) / 6
+            if limits is not None and (
+                np.any(next_point < limits[:, 0]) or np.any(next_point > limits[:, 1])
+            ):
+                break
+            points.append(next_point)
+            point = next_point
+        return np.asarray(points)
+
+    @staticmethod
+    def trace_pathline(
+        velocity_at: Callable[[float, np.ndarray], np.ndarray],
+        initial_position,
+        duration: float,
+        dt: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Follow a fluid particle through a potentially time-dependent 2D flow."""
+        position = _validate_state_vector(initial_position)
+        if position.shape != (2,):
+            raise ValueError("initial position must be a 2D vector")
+
+        def derivative(time: float, state: np.ndarray) -> np.ndarray:
+            velocity = np.asarray(velocity_at(time, state.copy()), dtype=np.float64)
+            if velocity.shape != (2,) or not np.all(np.isfinite(velocity)):
+                raise ValueError("velocity field must return a finite 2D vector")
+            return velocity
+
+        return integrate_rk4(derivative, position, duration, dt)
+
 
 class WavesEngine:
     """Wave equations for traveling, standing, and interference patterns."""
@@ -493,6 +707,40 @@ class WavesEngine:
         x = np.linspace(bounds[0], bounds[1], samples)
         y = WavesEngine.superpose([(amplitude, wave_number, angular_frequency, phase)], x, t)
         return np.column_stack((x, y))
+
+    @staticmethod
+    def sample_spacetime(
+        amplitude: float,
+        wave_number: float,
+        angular_frequency: float,
+        phase: float,
+        x_range,
+        time_range,
+        *,
+        samples_x: int = 200,
+        samples_t: int = 60,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return x, time, and a displacement grid ready for frame animation."""
+        x_bounds = np.asarray(x_range, dtype=np.float64)
+        t_bounds = np.asarray(time_range, dtype=np.float64)
+        samples_x, samples_t = int(samples_x), int(samples_t)
+        values = tuple(map(float, (amplitude, wave_number, angular_frequency, phase)))
+        if x_bounds.shape != (2,) or t_bounds.shape != (2,):
+            raise ValueError("x_range and time_range must each contain two bounds")
+        if not np.all(np.isfinite(x_bounds)) or x_bounds[1] <= x_bounds[0]:
+            raise ValueError("x_range must be finite and increasing")
+        if not np.all(np.isfinite(t_bounds)) or t_bounds[1] < t_bounds[0]:
+            raise ValueError("time_range must be finite and non-decreasing")
+        if not all(np.isfinite(value) for value in values):
+            raise ValueError("wave parameters must be finite")
+        if samples_x < 2 or samples_t < 1:
+            raise ValueError("samples_x must be at least 2 and samples_t at least 1")
+        x = np.linspace(*x_bounds, samples_x)
+        times = np.linspace(*t_bounds, samples_t)
+        displacement = values[0] * np.sin(
+            values[1] * x[None, :] - values[2] * times[:, None] + values[3]
+        )
+        return x, times, displacement
 
 
 # Backwards-compatible alias for the original motion-engine naming.
@@ -571,18 +819,18 @@ class EngineCatalog:
     @classmethod
     def describe(cls) -> dict[str, str]:
         descriptions = {
-            "advanced_calculus": "Partial derivatives, Jacobians, Hessians, and sampled curves.",
+            "advanced_calculus": "Partial derivatives, Jacobians, Hessians, directional derivatives, and line integrals.",
             "calculus": "Derivatives, integrals, and analytic approximation tools.",
-            "geometry": "Distance, angle, and Euclidean object primitives.",
-            "linear_algebra": "Vector, matrix, and basis operations for visual proofs.",
+            "geometry": "Euclidean measurements, polygon centroids, and affine transformations.",
+            "linear_algebra": "Vector, matrix, least-squares, and sampled transformation operations.",
             "kinematics": "Position and velocity evolution under simple motion models.",
-            "mechanics": "Projectile, harmonic, and force-driven dynamical systems.",
-            "rotational_mechanics": "Moment of inertia, torque, angular acceleration, and rotational energy.",
+            "mechanics": "Projectile motion and RK4 particle dynamics under force fields.",
+            "rotational_mechanics": "Moment of inertia, variable-torque dynamics, and rotational energy.",
             "electrostatics": "Coulomb field generation and charge interactions.",
             "magnetics": "Magnetic field approximations and current-centric geometry.",
-            "electrodynamics": "Electric and magnetic fields, Lorentz force, and energy flux.",
-            "fluids": "Velocity-field and streamline-like flow primitives.",
-            "waves": "Traveling and standing waves for interference visuals.",
+            "electrodynamics": "Lorentz dynamics, sampled plane waves, and electromagnetic energy flux.",
+            "fluids": "RK4 pathlines, steady streamlines, and incompressible flow diagnostics.",
+            "waves": "Traveling, standing, and sampled space-time wave fields.",
             "vector_calculus": "Gradient, divergence, and flow intuition in multiple dimensions.",
             "differential_equations": "Decay, resonance, and dynamic evolution at the heart of physics.",
         }
@@ -829,13 +1077,51 @@ class UniversalEngine:
             omega = 2.0 * np.pi
             derivative = harmonic_oscillator_derivative(omega=omega)
             times, states = simulate_system(derivative, [0.0, 0.9 * omega], duration_value, dt_value)
+            x_values, frame_times, wave_field = WavesEngine.sample_spacetime(
+                amplitude=0.9,
+                wave_number=2.0 * np.pi,
+                angular_frequency=omega,
+                phase=0.0,
+                x_range=(-6.0, 6.0),
+                time_range=(0.0, duration_value),
+                samples_x=160,
+                samples_t=max(2, min(60, int(np.ceil(duration_value / dt_value / 4)) + 1)),
+            )
             return {
                 "type": "rk4",
                 "domain": "waves",
                 "times": times,
                 "states": states,
                 "state_labels": ["displacement", "transverse_velocity"],
+                "wave_x": x_values,
+                "wave_times": frame_times,
+                "wave_field": wave_field,
                 "summary": "A sinusoidal wave point follows the harmonic-oscillator equation in time.",
+            }
+
+        if any(term in topic_key for term in ("fluid", "vortex", "streamline", "flow")):
+            if "vortex" in topic_key:
+                field_at = lambda _time, point: FluidsEngine.vortex_flow(
+                    point[0], point[1], circulation=2.0,
+                )
+            elif "source" in topic_key or "sink" in topic_key:
+                strength = -2.0 if "sink" in topic_key else 2.0
+                field_at = lambda _time, point: FluidsEngine.source_flow(
+                    point[0], point[1], strength=strength,
+                )
+            else:
+                field_at = lambda time, point: FluidsEngine.velocity_field(
+                    point[0], point[1], time,
+                )
+            times, positions = FluidsEngine.trace_pathline(
+                field_at, initial_position=[-1.0, 0.5], duration=duration_value, dt=dt_value,
+            )
+            return {
+                "type": "trajectory",
+                "domain": "fluids",
+                "times": times,
+                "positions": positions,
+                "summary": "A marked fluid particle follows the local velocity field through time.",
             }
 
         if "electrodynamic" in topic_key or "electromagnet" in topic_key:
