@@ -13,6 +13,7 @@ from physics_engine import (
     LinearAlgebraEngine,
     MagneticsEngine,
     MechanicsEngine,
+    UniversalEngine,
     VectorCalculusEngine,
     WavesEngine,
     harmonic_oscillator_derivative,
@@ -201,3 +202,13 @@ def test_episode_blueprint_has_camera_and_palette_for_film_grain():
     assert episode["core_idea"]
     assert episode["key_equations"]
     assert isinstance(episode["runtime_seconds"], (int, float))
+
+
+def test_universal_engine_generates_a_valid_topic_workflow():
+    engine = UniversalEngine()
+    result = engine.generate("wave interference", ["waves", "mechanics"])
+    assert result["topic"] == "wave interference"
+    assert result["domains"] == ["waves", "mechanics"]
+    assert result["scene_plan"]
+    assert result["simulator"]["type"] == "rk4"
+    assert result["intention"] == "mathematically precise and physically insightful"

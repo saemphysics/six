@@ -12,6 +12,8 @@ from collections.abc import Callable
 
 import numpy as np
 
+from narrative_engine import NarrativeEngine
+
 __all__ = [
     "integrate_rk4",
     "harmonic_oscillator_derivative",
@@ -30,6 +32,7 @@ __all__ = [
     "VectorCalculusEngine",
     "DifferentialEquationsEngine",
     "EngineCatalog",
+    "UniversalEngine",
 ]
 
 
@@ -452,3 +455,96 @@ class EngineCatalog:
             "differential_equations": "Decay, resonance, and dynamic evolution at the heart of physics.",
         }
         return {key: descriptions.get(key, "") for key in cls.available()}
+
+
+class UniversalEngine:
+    """Top-level engine for math/physics explanation and simulation."""
+
+    def __init__(self, default_dt: float = 1.0 / 120.0):
+        self.default_dt = float(default_dt)
+
+    @staticmethod
+    def available_domains() -> list[str]:
+        return EngineCatalog.available()
+
+    @staticmethod
+    def resolve_domain(domain: str):
+        return EngineCatalog.resolve(domain)
+
+    def simulate(self, topic: str, domains: list[str] | None = None, duration: float = 1.0, dt: float | None = None):
+        topic_key = str(topic).lower()
+        chosen = list(domains) if domains is not None else NarrativeEngine.choose_domains(topic_key)
+        chosen = [str(d).strip().lower() for d in chosen if str(d).strip()]
+        if not chosen:
+            chosen = NarrativeEngine.choose_domains(topic_key)
+
+        dt_value = self.default_dt if dt is None else float(dt)
+        duration_value = float(duration)
+
+        if "wave" in topic_key:
+            domain = "waves"
+            state = [0.0]
+            derivative = lambda _time, s: np.array([np.cos(_time)])
+            times, states = integrate_rk4(derivative, state, duration_value, dt_value)
+            return {
+                "type": "rk4",
+                "domain": domain,
+                "times": times,
+                "states": states,
+                "summary": "Wave phase evolution modeled as a deterministic oscillatory system.",
+            }
+
+        if "field" in topic_key or "electric" in topic_key or "magnet" in topic_key:
+            domain = "electrostatics"
+            points = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64)
+            charges = np.array([1.0, -1.0], dtype=np.float64)
+            field = ElectrostaticsEngine.electric_field(points, charges, np.array([0.5, 0.0, 0.0]))
+            return {
+                "type": "rk4",
+                "domain": domain,
+                "field": field,
+                "summary": "Electrostatic field structure generated from source charges.",
+            }
+
+        domain = chosen[0] if chosen else "mechanics"
+        derivative = harmonic_oscillator_derivative(omega=2.0)
+        times, states = simulate_system(derivative, [1.0, 0.0], duration_value, dt_value)
+        return {
+            "type": "rk4",
+            "domain": domain,
+            "times": times,
+            "states": states,
+            "summary": "A stable harmonic model captures the topic’s local dynamics under a clear mechanical lens.",
+        }
+
+    def generate(self, topic: str, domains: list[str] | None = None):
+        topic_name = str(topic or "general").strip()
+        chosen = list(domains) if domains is not None else NarrativeEngine.choose_domains(topic_name)
+        chosen = [str(d).strip().lower() for d in chosen if str(d).strip()]
+        if not chosen:
+            chosen = NarrativeEngine.choose_domains(topic_name)
+
+        blueprint = NarrativeEngine.topic_blueprint(topic_name, chosen)
+        simulation = self.simulate(topic_name, chosen, duration=1.0, dt=self.default_dt)
+        return {
+            "topic": topic_name,
+            "domains": chosen,
+            "scene_plan": blueprint["scene_plan"],
+            "voiceover": blueprint["voiceover"],
+            "motif": blueprint["motif"],
+            "style": blueprint["style"],
+            "simulator": simulation,
+            "intention": "mathematically precise and physically insightful",
+        }
+
+    def build_episode(self, topic: str, domains: list[str] | None = None):
+        topic_name = str(topic or "general").strip()
+        chosen = list(domains) if domains is not None else NarrativeEngine.choose_domains(topic_name)
+        chosen = [str(d).strip().lower() for d in chosen if str(d).strip()]
+        if not chosen:
+            chosen = NarrativeEngine.choose_domains(topic_name)
+
+        episode = NarrativeEngine.build_episode(topic_name, chosen)
+        episode["simulator"] = self.simulate(topic_name, chosen, duration=1.0, dt=self.default_dt)
+        episode["intention"] = "mathematically precise and physically insightful"
+        return episode
