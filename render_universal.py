@@ -36,6 +36,7 @@ import textwrap
 import numpy as np
 from manim import *
 from manim import rate_functions as rf
+from physics_engine import integrate_rk4
 
 # ============================================================ voiceover
 try:
@@ -1700,14 +1701,36 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
         pivot = to_3d(item.get("pivot", [0, 2.5, 0]))
         length = float(item.get("length", 3.0))
         start_angle = float(item.get("angle", 30)) * DEGREES
-        period = max(1.5, float(item.get("period", 3.0)))
+        period = float(item["period"]) if item.get("period") else None
+        gravity = float(item.get("gravity", 9.81))
+        if period is not None:
+            if period <= 0:
+                raise ValueError("pendulum period must be positive")
+            gravity = 4 * PI**2 * length / period**2
         color = resolve_color(item)
         bob_r = float(item.get("bob_radius", 0.25))
         gt = self.global_time
 
+        duration = max(0.0, float(self.sk.get("duration", 30.0)))
+
+        def _derivative(_t, state):
+            theta, angular_velocity = state
+            return np.array([
+                angular_velocity,
+                -(gravity / length) * np.sin(theta),
+            ])
+
+        times, states = integrate_rk4(
+            _derivative, [start_angle, 0.0], duration, 1 / 120,
+        )
+
         def _bob_pos():
-            t = gt.get_value() * (TAU / period)
-            theta = start_angle * np.cos(t)
+            t = float(np.clip(gt.get_value(), times[0], times[-1]))
+            right = min(np.searchsorted(times, t, side="right"), len(times) - 1)
+            left = max(0, right - 1)
+            span = times[right] - times[left]
+            alpha = (t - times[left]) / span if span else 0.0
+            theta = states[left, 0] + alpha * (states[right, 0] - states[left, 0])
             return pivot + length * np.array([np.sin(theta),
                                               -np.cos(theta), 0.0])
         pivot_dot = Dot(pivot, radius=0.08, color=COLOR["white"])
