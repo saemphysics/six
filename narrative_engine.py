@@ -11,6 +11,55 @@ from dataclasses import dataclass
 from typing import Iterable
 
 
+TEMPLATE_LIBRARY = {
+    "pendulum": {
+        "motif": "pivot, bob, and arc reveal",
+        "palette": {"bg": "#0B0C10", "primary": "#F1C40F", "secondary": "#3498DB", "accent": "#FF4B4B"},
+        "camera_notes": [
+            "Start with a wide establishing angle and slowly push in toward the pivot.",
+            "Then isolate the bob with a subtle zoom as the phase angle becomes clear.",
+            "Finish with a wide shot and a clean energy overlay.",
+        ],
+        "visuals": [
+            {"title": "setup", "engine": "mechanics", "element": "pendulum rig"},
+            {"title": "intuition", "engine": "calculus", "element": "angular acceleration"},
+            {"title": "simulation", "engine": "mechanics", "element": "damped trajectory"},
+            {"title": "reveal", "engine": "waves", "element": "phase portrait"},
+        ],
+    },
+    "wave interference": {
+        "motif": "interference field with moving phase fronts",
+        "palette": {"bg": "#0B0C10", "primary": "#00D2FF", "secondary": "#F1C40F", "accent": "#2ECC71"},
+        "camera_notes": [
+            "Use symmetric framing around the two sources.",
+            "A slow lateral push reveals the amplitude modulation.",
+            "End with a close-up on the nodal lines.",
+        ],
+        "visuals": [
+            {"title": "setup", "engine": "waves", "element": "two source rings"},
+            {"title": "intuition", "engine": "calculus", "element": "phase difference"},
+            {"title": "simulation", "engine": "waves", "element": "interference map"},
+            {"title": "reveal", "engine": "mechanics", "element": "energy transfer"},
+        ],
+    },
+    "default": {
+        "motif": "minimal diagram with elegant motion and a single explanatory lens",
+        "palette": {"bg": "#0B0C10", "primary": "#F1C40F", "secondary": "#3498DB", "accent": "#FF4B4B"},
+        "camera_notes": [
+            "Establish the object with a quiet medium shot.",
+            "Zoom in to the relevant feature and hold until the idea resolves.",
+            "Finish on the invariant.",
+        ],
+        "visuals": [
+            {"title": "setup", "engine": "mechanics", "element": "reference frame"},
+            {"title": "intuition", "engine": "calculus", "element": "change law"},
+            {"title": "simulation", "engine": "mechanics", "element": "trajectory"},
+            {"title": "reveal", "engine": "geometry", "element": "invariant proof"},
+        ],
+    },
+}
+
+
 @dataclass(frozen=True)
 class SceneBeat:
     """A single cinematic beat in a mathematical explanation."""
@@ -157,11 +206,35 @@ class NarrativeEngine:
             f"{beat.title.capitalize()}: {beat.goal} {beat.detail}."
             for beat in beats
         ]
+        base_template = TEMPLATE_LIBRARY.get(topic_name.lower(), TEMPLATE_LIBRARY["default"])
         return {
             "topic": topic_name,
             "domains": domain_list,
-            "motif": NarrativeEngine._motifs[motif_key],
+            "motif": base_template["motif"],
             "scene_plan": scene_plan,
             "voiceover": voiceover,
             "style": "elegant, minimal, mathematically precise, cinematic",
+            "palette": base_template["palette"],
+            "camera_notes": base_template["camera_notes"],
+            "visuals": [
+                {
+                    "title": entry["title"],
+                    "engine": entry["engine"],
+                    "element": entry["element"],
+                }
+                for entry in base_template["visuals"]
+            ],
+        }
+
+    @staticmethod
+    def build_episode(topic: str, domains: Iterable[str] | None = None) -> dict:
+        """Build a polished cinematic episode blueprint with runtime and direction."""
+        plan = NarrativeEngine.topic_blueprint(topic, domains)
+        runtime_seconds = sum(float(beat["duration"]) for beat in plan["scene_plan"])
+        return {
+            **plan,
+            "runtime_seconds": runtime_seconds,
+            "camera_notes": plan["camera_notes"],
+            "visuals": plan["visuals"],
+            "narration_style": "slow, precise, luminous, explanatory",
         }

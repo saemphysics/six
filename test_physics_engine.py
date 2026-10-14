@@ -174,3 +174,12 @@ def test_narrative_plan_generates_topic_blueprint_and_voiceover():
     assert plan["motif"]
     assert len(plan["voiceover"]) >= 3
     assert plan["scene_plan"][0]["title"] == "setup"
+
+
+def test_episode_blueprint_has_camera_and_palette_for_film_grain():
+    episode = NarrativeEngine.build_episode("pendulum", ["mechanics", "calculus"])
+    assert episode["topic"] == "pendulum"
+    assert episode["palette"]["primary"]
+    assert episode["camera_notes"]
+    assert episode["visuals"][0]["engine"] in {"mechanics", "calculus"}
+    assert isinstance(episode["runtime_seconds"], (int, float))
