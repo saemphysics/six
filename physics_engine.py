@@ -17,6 +17,16 @@ __all__ = [
     "harmonic_oscillator_derivative",
     "pendulum_derivative",
     "simulate_system",
+    "CalculusEngine",
+    "GeometryEngine",
+    "LinearAlgebraEngine",
+    "KinematicsEngine",
+    "KineticsEngine",
+    "MechanicsEngine",
+    "ElectrostaticsEngine",
+    "MagneticsEngine",
+    "FluidsEngine",
+    "WavesEngine",
 ]
 
 
@@ -136,3 +146,199 @@ def simulate_system(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Convenience wrapper around ``integrate_rk4`` for scene-driven animation."""
     return integrate_rk4(derivative, initial_state, duration, dt)
+
+
+class CalculusEngine:
+    """Core symbolic/numeric calculus primitives for animation math."""
+
+    @staticmethod
+    def derivative(func: Callable[[np.ndarray], np.ndarray], x: np.ndarray | float, *, h: float = 1e-6):
+        x_arr = np.asarray(x, dtype=np.float64)
+        if x_arr.ndim == 0:
+            return float((func(x_arr + h) - func(x_arr - h)) / (2.0 * h))
+        values = np.asarray(func(x_arr), dtype=np.float64)
+        if values.shape != x_arr.shape:
+            raise ValueError("function output must match the input shape")
+        return np.gradient(values, x_arr, edge_order=2)
+
+    @staticmethod
+    def integrate(func: Callable[[np.ndarray], np.ndarray], a: float, b: float, n: int = 1000) -> float:
+        if n < 2:
+            raise ValueError("n must be at least 2")
+        xs = np.linspace(float(a), float(b), int(n) + 1)
+        ys = np.asarray(func(xs), dtype=np.float64)
+        return float(np.trapezoid(ys, xs))
+
+
+class GeometryEngine:
+    """Euclidean geometry primitives used in visual proofs and diagrams."""
+
+    @staticmethod
+    def distance(point_a, point_b) -> float:
+        a = np.asarray(point_a, dtype=np.float64)
+        b = np.asarray(point_b, dtype=np.float64)
+        return float(np.linalg.norm(a - b))
+
+    @staticmethod
+    def angle_between(vector_a, vector_b) -> float:
+        a = np.asarray(vector_a, dtype=np.float64)
+        b = np.asarray(vector_b, dtype=np.float64)
+        denominator = np.linalg.norm(a) * np.linalg.norm(b)
+        if denominator == 0.0:
+            raise ValueError("angle between zero vectors is undefined")
+        cosine = np.clip(np.dot(a, b) / denominator, -1.0, 1.0)
+        return float(np.arccos(cosine))
+
+    @staticmethod
+    def line_equation(point_a, point_b):
+        a = np.asarray(point_a, dtype=np.float64)
+        b = np.asarray(point_b, dtype=np.float64)
+        delta = b - a
+        if np.allclose(delta, 0.0):
+            raise ValueError("line endpoints must be distinct")
+        slope = delta[1] / delta[0] if abs(delta[0]) > 1e-12 else np.inf
+        intercept = a[1] - slope * a[0]
+        return slope, intercept
+
+
+class LinearAlgebraEngine:
+    """Lightweight linear algebra utilities for vector and matrix problems."""
+
+    @staticmethod
+    def dot(vector_a, vector_b):
+        a = np.asarray(vector_a, dtype=np.float64)
+        b = np.asarray(vector_b, dtype=np.float64)
+        return float(np.dot(a, b))
+
+    @staticmethod
+    def matrix_vector_product(matrix, vector):
+        m = np.asarray(matrix, dtype=np.float64)
+        v = np.asarray(vector, dtype=np.float64)
+        return np.asarray(m @ v, dtype=np.float64)
+
+    @staticmethod
+    def normalize(vector):
+        v = np.asarray(vector, dtype=np.float64)
+        norm = np.linalg.norm(v)
+        if norm == 0.0:
+            raise ValueError("cannot normalize a zero vector")
+        return v / norm
+
+
+class KinematicsEngine:
+    """1D/2D kinematics for cinematic motion studies."""
+
+    @staticmethod
+    def constant_acceleration_position(x0: float, v0: float, a: float, t: float) -> float:
+        return float(x0 + v0 * t + 0.5 * a * t ** 2)
+
+    @staticmethod
+    def constant_acceleration_velocity(v0: float, a: float, t: float) -> float:
+        return float(v0 + a * t)
+
+
+KineticsEngine = KinematicsEngine
+
+
+class MechanicsEngine:
+    """Classical mechanics models for trajectories and oscillations."""
+
+    @staticmethod
+    def projectile_trajectory(speed: float, angle_deg: float, dt: float, gravity: float = 9.81, max_time: float = 10.0):
+        theta = np.deg2rad(float(angle_deg))
+        vx = float(speed) * np.cos(theta)
+        vy = float(speed) * np.sin(theta)
+        x = 0.0
+        y = 0.0
+        positions = [(x, y)]
+        t = 0.0
+        while y >= 0.0 and t <= max_time:
+            x = vx * t
+            y = vy * t - 0.5 * gravity * t ** 2
+            positions.append((x, y))
+            t += float(dt)
+        return positions
+
+    @staticmethod
+    def spring_force(k: float, x: float) -> float:
+        return float(-k * x)
+
+
+class ElectrostaticsEngine:
+    """Coulomb-law electric field computations for charge diagrams."""
+
+    @staticmethod
+    def electric_field(positions, charges, point, k: float = 8.9875517923e9):
+        p = np.asarray(point, dtype=np.float64)
+        pos = np.asarray(positions, dtype=np.float64)
+        q = np.asarray(charges, dtype=np.float64)
+        if pos.shape[-1] != 3 or p.shape != (3,):
+            raise ValueError("positions and point must be 3D vectors")
+        if pos.shape[0] != q.shape[0]:
+            raise ValueError("charges and positions must have matching lengths")
+
+        field = np.zeros(3, dtype=np.float64)
+        for charge_position, charge in zip(pos, q):
+            delta = p - charge_position
+            radius_sq = np.dot(delta, delta)
+            if radius_sq < 1e-12:
+                continue
+            field += k * charge * delta / (radius_sq ** 1.5)
+        return field
+
+
+class MagneticsEngine:
+    """Simple magnetostatics approximations for wire and loop visualizations."""
+
+    @staticmethod
+    def magnetic_field(wire_point, current: float, observation, mu0: float = 4e-7 * np.pi):
+        p = np.asarray(wire_point, dtype=np.float64)
+        o = np.asarray(observation, dtype=np.float64)
+        if p.shape != (3,) or o.shape != (3,):
+            raise ValueError("wire_point and observation must be 3D vectors")
+        delta = o - p
+        radius_sq = np.dot(delta, delta)
+        if radius_sq < 1e-12:
+            radius_sq = 1e-12
+        direction = np.array([0.0, 0.0, 1.0])
+        field = mu0 * float(current) * np.cross(direction, delta) / (2.0 * np.pi * radius_sq)
+        return field
+
+
+class FluidsEngine:
+    """Fluid-flow field primitives for streamlines and visualized velocity fields."""
+
+    @staticmethod
+    def velocity_field(x, y, t=0.0):
+        x_val = float(x)
+        y_val = float(y)
+        return np.array([
+            np.sin(x_val + t),
+            np.cos(y_val - t),
+        ], dtype=np.float64)
+
+    @staticmethod
+    def continuity_error(field):
+        field_array = np.asarray(field, dtype=np.float64)
+        return float(np.linalg.norm(field_array))
+
+
+class WavesEngine:
+    """Wave equations for traveling, standing, and interference patterns."""
+
+    @staticmethod
+    def traveling_wave(amplitude: float, wave_number: float, angular_frequency: float, phase: float, x: float, t: float) -> float:
+        return float(amplitude * np.sin(wave_number * x - angular_frequency * t + phase))
+
+    @staticmethod
+    def standing_wave(amplitude: float, wave_number: float, angular_frequency: float, phase: float, x: float, t: float) -> float:
+        return float(2.0 * amplitude * np.sin(wave_number * x + phase) * np.cos(angular_frequency * t))
+
+
+# Backwards-compatible alias for the original motion-engine naming.
+Mechanics = MechanicsEngine
+Electrostatics = ElectrostaticsEngine
+Magnetics = MagneticsEngine
+Fluids = FluidsEngine
+Waves = WavesEngine
+Kinematics = KinematicsEngine
