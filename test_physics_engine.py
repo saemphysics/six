@@ -4,6 +4,7 @@ import pytest
 from narrative_engine import NarrativeEngine
 from physics_engine import (
     CalculusEngine,
+    DifferentialEquationsEngine,
     ElectrostaticsEngine,
     EngineCatalog,
     FluidsEngine,
@@ -12,6 +13,7 @@ from physics_engine import (
     LinearAlgebraEngine,
     MagneticsEngine,
     MechanicsEngine,
+    VectorCalculusEngine,
     WavesEngine,
     harmonic_oscillator_derivative,
     integrate_rk4,
@@ -176,10 +178,26 @@ def test_narrative_plan_generates_topic_blueprint_and_voiceover():
     assert plan["scene_plan"][0]["title"] == "setup"
 
 
+def test_vector_calculus_and_odes_support_deep_math_narratives():
+    grad = VectorCalculusEngine.gradient(lambda xy: xy[0] ** 2 + xy[1] ** 2, np.array([1.0, 2.0]))
+    assert grad.tolist() == pytest.approx([2.0, 4.0])
+
+    decay = DifferentialEquationsEngine.exponential_decay(k=3.0, t=1.0)
+    assert decay == pytest.approx(np.exp(-3.0))
+
+    field = VectorCalculusEngine.divergence(
+        lambda xy: np.array([xy[0], xy[1]]),
+        np.array([1.0, 2.0]),
+    )
+    assert field == pytest.approx(2.0)
+
+
 def test_episode_blueprint_has_camera_and_palette_for_film_grain():
     episode = NarrativeEngine.build_episode("pendulum", ["mechanics", "calculus"])
     assert episode["topic"] == "pendulum"
     assert episode["palette"]["primary"]
     assert episode["camera_notes"]
     assert episode["visuals"][0]["engine"] in {"mechanics", "calculus"}
+    assert episode["core_idea"]
+    assert episode["key_equations"]
     assert isinstance(episode["runtime_seconds"], (int, float))

@@ -27,6 +27,8 @@ __all__ = [
     "MagneticsEngine",
     "FluidsEngine",
     "WavesEngine",
+    "VectorCalculusEngine",
+    "DifferentialEquationsEngine",
     "EngineCatalog",
 ]
 
@@ -336,6 +338,54 @@ class WavesEngine:
         return float(2.0 * amplitude * np.sin(wave_number * x + phase) * np.cos(angular_frequency * t))
 
 
+class VectorCalculusEngine:
+    """Advanced vector calculus for beautiful visual intuition in multivariable settings."""
+
+    @staticmethod
+    def gradient(scalar_field, point):
+        p = np.asarray(point, dtype=np.float64)
+        if p.size == 2:
+            x, y = p
+            fx = scalar_field(np.array([x, y]))
+            h = 1e-6
+            gx = (scalar_field(np.array([x + h, y])) - fx) / h
+            gy = (scalar_field(np.array([x, y + h])) - fx) / h
+            return np.array([gx, gy], dtype=np.float64)
+        if p.size == 3:
+            x, y, z = p
+            h = 1e-6
+            f0 = scalar_field(np.array([x, y, z]))
+            dx = (scalar_field(np.array([x + h, y, z])) - f0) / h
+            dy = (scalar_field(np.array([x, y + h, z])) - f0) / h
+            dz = (scalar_field(np.array([x, y, z + h])) - f0) / h
+            return np.array([dx, dy, dz], dtype=np.float64)
+        raise ValueError("point must be 2D or 3D")
+
+    @staticmethod
+    def divergence(vector_field, point):
+        p = np.asarray(point, dtype=np.float64)
+        h = 1e-6
+        if p.size == 2:
+            vx = vector_field(p)[0]
+            vy = vector_field(p)[1]
+            d1 = (vector_field(p + np.array([h, 0.0]))[0] - vx) / h
+            d2 = (vector_field(p + np.array([0.0, h]))[1] - vy) / h
+            return float(d1 + d2)
+        raise ValueError("divergence implemented for 2D fields only")
+
+
+class DifferentialEquationsEngine:
+    """Core differential equation models for intuitive dynamic explanation."""
+
+    @staticmethod
+    def exponential_decay(k: float = 1.0, t: float = 0.0, initial_value: float = 1.0) -> float:
+        return float(initial_value * np.exp(-float(k) * float(t)))
+
+    @staticmethod
+    def harmonic_response(omega: float = 1.0, t: float = 0.0, amplitude: float = 1.0) -> float:
+        return float(amplitude * np.sin(float(omega) * float(t)))
+
+
 # Backwards-compatible alias for the original motion-engine naming.
 Mechanics = MechanicsEngine
 Electrostatics = ElectrostaticsEngine
@@ -358,6 +408,8 @@ class EngineCatalog:
         "magnetics": MagneticsEngine,
         "fluids": FluidsEngine,
         "waves": WavesEngine,
+        "vector_calculus": VectorCalculusEngine,
+        "differential_equations": DifferentialEquationsEngine,
     }
 
     @classmethod
@@ -396,5 +448,7 @@ class EngineCatalog:
             "magnetics": "Magnetic field approximations and current-centric geometry.",
             "fluids": "Velocity-field and streamline-like flow primitives.",
             "waves": "Traveling and standing waves for interference visuals.",
+            "vector_calculus": "Gradient, divergence, and flow intuition in multiple dimensions.",
+            "differential_equations": "Decay, resonance, and dynamic evolution at the heart of physics.",
         }
         return {key: descriptions.get(key, "") for key in cls.available()}

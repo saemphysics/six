@@ -231,8 +231,38 @@ class NarrativeEngine:
         """Build a polished cinematic episode blueprint with runtime and direction."""
         plan = NarrativeEngine.topic_blueprint(topic, domains)
         runtime_seconds = sum(float(beat["duration"]) for beat in plan["scene_plan"])
+        topic_key = str(topic or "general").lower()
+        key_equations = []
+        if "wave" in topic_key:
+            key_equations = [r"y(x,t)=A \sin(kx-\omega t+\phi)", r"v = \lambda f"]
+        elif "pend" in topic_key:
+            key_equations = [r"\theta'' + \frac{g}{L}\sin\theta = 0", r"E = \frac{1}{2}mL^2\dot{\theta}^2 + mgL(1 - \cos\theta)"]
+        elif "field" in topic_key or "electric" in topic_key or "magnet" in topic_key:
+            key_equations = [r"F = q(E + v \times B)", r"\nabla \cdot E = \rho / \epsilon_0"]
+        else:
+            key_equations = [r"f'(x) = \lim_{h\to 0} \frac{f(x+h)-f(x)}{h}", r"A x = b"]
+
+        core_idea = {
+            "pendulum": "The restoring force is not linear at large angles; the geometry of the arc and the conservation of energy explain the motion.",
+            "wave interference": "Interference is the sum of phases, and the geometry of phase difference creates brightness and darkness.",
+        }.get(topic_key, "A small number of invariants and local rules creates the whole structure of the motion.")
+
+        intuition_lines = [
+            "Look at the local change, not the whole trajectory at once.",
+            "Every beautiful formula is a compressed story about symmetry and balance.",
+            "The deep idea is the invariant hidden inside the motion.",
+        ]
+
         return {
             **plan,
+            "core_idea": core_idea,
+            "key_equations": key_equations,
+            "intuition": intuition_lines,
+            "physical_deepness": [
+                "The model follows the minimal laws that survive the geometry of the problem.",
+                "The animation should reveal structure before numbers, and numbers before abstraction.",
+                "The final image should feel inevitable, not merely decorative.",
+            ],
             "runtime_seconds": runtime_seconds,
             "camera_notes": plan["camera_notes"],
             "visuals": plan["visuals"],
