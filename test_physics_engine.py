@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from narrative_engine import NarrativeEngine
 from physics_engine import (
     CalculusEngine,
     ElectrostaticsEngine,
@@ -156,3 +157,11 @@ def test_domain_registry_exposes_every_engine_and_resolves_class_names():
     assert EngineCatalog.resolve("mechanics") is MechanicsEngine
     assert EngineCatalog.resolve("waves") is WavesEngine
     assert EngineCatalog.resolve("calculus") is CalculusEngine
+
+
+def test_narrative_engine_builds_a_coherent_story_arc():
+    beats = NarrativeEngine.build_story("pendulum", ["mechanics", "calculus", "waves"])
+    assert len(beats) >= 4
+    assert beats[0].title == "setup"
+    assert all(beat.engine in {"mechanics", "calculus", "waves"} for beat in beats)
+    assert all(beat.goal for beat in beats)
